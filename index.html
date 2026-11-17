@@ -12,6 +12,30 @@
     --sans: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
   *{box-sizing:border-box}
+  html{color-scheme:dark;accent-color:var(--accent)}
+  /* scrollbars that match the theme */
+  *{scrollbar-width:thin;scrollbar-color:#3a404d transparent}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:#3a404d;border-radius:10px;border:2px solid var(--bg)}
+  aside ::-webkit-scrollbar-thumb, textarea::-webkit-scrollbar-thumb{border-color:var(--panel2)}
+  ::-webkit-scrollbar-thumb:hover{background:var(--accent)}
+  ::-webkit-scrollbar-corner{background:transparent}
+  ::-webkit-resizer{background:transparent}
+  ::selection{background:rgba(232,176,74,.35);color:#fff}
+  ::placeholder{color:#6b7280}
+  html select{appearance:none;-webkit-appearance:none;padding-right:34px;cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23e8b04a' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center}
+  select option{background:var(--panel2);color:var(--text)}
+  input::-webkit-calendar-picker-indicator{filter:invert(.7) sepia(1) saturate(4) hue-rotate(5deg);cursor:pointer}
+  details summary{list-style:none}
+  details summary::before{content:"▸ ";color:var(--accent)}
+  details[open] summary::before{content:"▾ "}
+  details summary::-webkit-details-marker{display:none}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button{transition:border-color .15s,background .15s,transform .05s}
+  button:active{transform:translateY(1px)}
   body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.5}
   header{display:flex;align-items:baseline;gap:14px;padding:22px 28px;border-bottom:1px solid var(--line)}
   header h1{font-family:var(--serif);font-weight:600;font-size:28px;margin:0;letter-spacing:.3px}
@@ -54,6 +78,9 @@
   .bar{display:flex;gap:8px;flex-wrap:wrap;max-width:760px;margin:0 auto 22px;align-items:center}
   .bar .count{margin-left:auto;color:var(--muted);font-size:13px}
   .saved{font-size:12px;color:var(--accent)}
+  .lvlGroup{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .lvlGroup button{border:none;border-radius:0;font-size:13px;padding:8px 11px}
+  .lvl{font-size:12px;color:var(--accent2);padding:0 10px;border-left:1px solid var(--line);border-right:1px solid var(--line);align-self:stretch;display:flex;align-items:center;background:var(--panel);white-space:nowrap}
   .drop{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
   .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   .chip{display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px 6px 4px 4px;font-size:12px;max-width:100%}
@@ -81,6 +108,19 @@
   .fix{padding:10px 0;border-bottom:1px solid var(--line)}.fix:last-child{border:none}
   .fix q{font-family:var(--serif);color:var(--accent2)}
   .fix div{font-size:14px;margin-top:4px}
+  .help{margin-left:auto;width:34px;height:34px;padding:0;border-radius:50%;font-weight:700;color:var(--accent)}
+  .help + .tabs{margin-left:10px}
+  .tip{position:absolute;z-index:50;max-width:280px;background:var(--accent);color:#1a1405;border-radius:12px;padding:12px 14px 10px;
+       font-size:14px;line-height:1.4;box-shadow:0 10px 30px rgba(0,0,0,.45);animation:pop .18s ease-out}
+  .tip::before{content:"";position:absolute;width:12px;height:12px;background:var(--accent);transform:rotate(45deg);left:var(--ax,22px)}
+  .tip.below::before{top:-6px}.tip.above::before{bottom:-6px}
+  .tip b{display:block;margin-bottom:2px}
+  .tip .tbar{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .tip .tbar small{opacity:.7;margin-right:auto}
+  .tip button{background:#1a1405;color:var(--accent2);border:none;padding:5px 11px;font-size:13px;border-radius:7px}
+  .tip button.skip{background:transparent;color:#1a1405;text-decoration:underline;padding:5px 4px}
+  .tipRing{outline:2px solid var(--accent)!important;outline-offset:4px;border-radius:8px;transition:outline-offset .2s}
+  @keyframes pop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   body.dragging aside{outline:2px dashed var(--accent);outline-offset:-6px}
 </style>
 </head>
@@ -88,6 +128,7 @@
 <header>
   <h1>Ink<span>well</span></h1>
   <p>Give it a sample of your writing, then a prompt. It drafts in your voice.</p>
+  <button class="help" id="helpBtn" title="Show tips again">?</button>
   <div class="tabs" id="tabs"><button data-tab="write" class="on">✍️ Write</button><button data-tab="grade">📝 Grade</button></div>
 </header>
 
@@ -161,12 +202,26 @@
       </details>
     </div>
 
-    <div>
-      <label for="tone">Tone</label>
-      <select id="tone">
-        <option value="match the sample">Match my sample</option>
-        <option>casual</option><option>formal</option><option>funny</option><option>confident</option><option>simple and clear</option>
-      </select>
+    <div class="row">
+      <div>
+        <label for="tone">Tone</label>
+        <select id="tone">
+          <option value="match the sample">Match my sample</option>
+          <option>casual</option><option>formal</option><option>funny</option><option>confident</option><option>simple and clear</option>
+        </select>
+      </div>
+      <div id="levelBox">
+        <label for="level">Grade level</label>
+        <select id="level">
+          <option value="">Match my sample</option>
+          <option value="3">Grades 3–4</option>
+          <option value="5">Grades 5–6</option>
+          <option value="7">Grades 7–8</option>
+          <option value="9">Grades 9–10</option>
+          <option value="11">Grades 11–12</option>
+          <option value="13">College</option>
+        </select>
+      </div>
     </div>
 
     <div>
@@ -248,6 +303,7 @@ function showTab(t){
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   $("out").style.display = t === "write" ? "" : "none";
   $("gradeView").style.display = t === "grade" ? "" : "none";
+  clearTip(); if (t === "grade") runTips("grade");
 }
 document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
 $("essay").addEventListener("input", () => $("essayWords").textContent = countWords($("essay").value));
@@ -309,6 +365,63 @@ async function revise(instruction, btn){
   btn.disabled = false; btn.textContent = old;
 }
 
+// ---------- first-time tips ----------
+const TIPS = {
+  start: [
+    ["#sample",   "Start with your writing", "Paste something you wrote, or hit 🎤 Speak and just talk. It learns how you sound."],
+    ["#voice",    "Polished or Like me?", "Polished = perfect grammar. Like me = keeps your slang and the mistakes you always make."],
+    ["#levelBox", "Grade level", "You can change the grade level and how complex the writing is here."],
+    ["#drop",     "Add sources", "Upload photos, PDFs or screenshots — or paste links above. It quotes them as evidence."],
+    ["#type",     "Any format", "Type anything here, like “RACES paragraph” or “CER”, and it follows that structure."],
+    ["#tabs",     "Grade your writing", "Switch to Grade to paste an essay, get a score, and have it rewritten."],
+  ],
+  draft: [
+    ["#lvlGroup", "Too easy or too hard?", "Use ⬇ Simpler or ⬆ More advanced to change the grade level of this draft. The middle shows its current level."],
+    [".para",     "Edit any paragraph", "Hover over a paragraph to rewrite it, make it longer or shorter — or click and type to edit it yourself."],
+  ],
+  grade: [
+    ["#rubric",   "Grade it fairly", "Paste the assignment or rubric so it grades you on what your teacher actually wants."],
+  ],
+};
+let tipEl = null, ringEl = null;
+function clearTip(){ tipEl?.remove(); tipEl = null; ringEl?.classList.remove("tipRing"); ringEl = null; }
+function runTips(set, force){
+  const key = "inkwell.tips." + set;
+  if (!force && store.get(key)) return;
+  const list = TIPS[set].filter(([sel]) => { const el = document.querySelector(sel); return el && el.offsetParent !== null; });
+  let i = 0;
+  const finish = () => { clearTip(); store.set(key, "1"); window.removeEventListener("resize", place); };
+  function place(){
+    if (!tipEl || !ringEl) return;
+    const r = ringEl.getBoundingClientRect(), t = tipEl.getBoundingClientRect();
+    const below = r.bottom + t.height + 20 < window.innerHeight;
+    let left = Math.min(Math.max(10, r.left), window.innerWidth - t.width - 10);
+    tipEl.classList.toggle("below", below); tipEl.classList.toggle("above", !below);
+    tipEl.style.left = left + window.scrollX + "px";
+    tipEl.style.top = (below ? r.bottom + 12 : r.top - t.height - 12) + window.scrollY + "px";
+    tipEl.style.setProperty("--ax", Math.max(14, Math.min(t.width - 26, r.left + Math.min(40, r.width / 2) - left)) + "px");
+  }
+  function show(){
+    clearTip(); if (i >= list.length) return finish();
+    const [sel, title, text] = list[i];
+    ringEl = document.querySelector(sel); ringEl.classList.add("tipRing");
+    ringEl.scrollIntoView({ block:"nearest", behavior:"smooth" });
+    tipEl = document.createElement("div"); tipEl.className = "tip";
+    tipEl.innerHTML = `<b></b><span></span><div class="tbar"><small>${i+1} of ${list.length}</small><button class="skip">Skip tips</button><button class="next">${i === list.length - 1 ? "Got it" : "Next"}</button></div>`;
+    tipEl.querySelector("b").textContent = title; tipEl.querySelector("span").textContent = text;
+    tipEl.querySelector(".next").onclick = () => { i++; show(); };
+    tipEl.querySelector(".skip").onclick = () => { Object.keys(TIPS).forEach(k => store.set("inkwell.tips." + k, "1")); clearTip(); };
+    document.body.appendChild(tipEl); place(); setTimeout(place, 350);
+  }
+  window.addEventListener("resize", place);
+  if (list.length) setTimeout(show, force ? 0 : 600);
+}
+$("helpBtn").onclick = () => {
+  const onGrade = $("gradeView").style.display !== "none";
+  runTips(onGrade ? "grade" : ($("doc") ? "draft" : "start"), true);
+};
+window.addEventListener("load", () => runTips("start"));
+
 // ---------- voice input (Chrome / Edge) ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, recBtn = null;
@@ -335,7 +448,7 @@ document.querySelectorAll(".mic").forEach(btn => {
 function setStatus(msg, err){ $("status").textContent = msg || ""; $("status").className = "status" + (err ? " err" : ""); }
 function common(){
   const links = $("links").value.split(/\s+/).filter(u => /^https?:\/\//i.test(u)).slice(0, 5);
-  return { sample: $("sample").value, prompt: $("prompt").value, type: $("type").value || "Essay", length: $("length").value, tone: $("tone").value, voice, links, sourceText: $("sourceText").value,
+  return { sample: $("sample").value, prompt: $("prompt").value, type: $("type").value || "Essay", length: $("length").value, tone: $("tone").value, level: $("level").value, voice, links, sourceText: $("sourceText").value,
            files: files.filter(f => f.data).map(f => ({ name: f.name, mime: f.mime, data: f.data })) };
 }
 
@@ -436,6 +549,7 @@ function renderDoc(text, keepTitle){
   if (title){ const h = document.createElement("h2"); h.contentEditable = true; h.textContent = title; doc.appendChild(h); }
   parts.forEach(p => doc.appendChild(paraEl(p)));
   out.appendChild(doc); updateCount();
+  setTimeout(() => runTips("draft"), 400);
 }
 
 function paraEl(text){
@@ -473,14 +587,58 @@ function toolbar(){
   const count = document.createElement("span"); count.className = "count"; count.id = "count";
   const grade = document.createElement("button"); grade.textContent = "📝 Grade this";
   grade.onclick = () => { $("essay").value = docText(); $("essay").dispatchEvent(new Event("input")); showTab("grade"); $("gradeBtn").click(); };
-  bar.append(copy, txt, docx, add, grade, count); return bar;
+  const lvl = document.createElement("span"); lvl.className = "lvl"; lvl.id = "lvlChip"; lvl.title = "Estimated reading grade level";
+  const down = document.createElement("button"); down.textContent = "⬇ Simpler"; down.id = "simpler"; down.title = "Rewrite at a lower grade level";
+  const up = document.createElement("button"); up.textContent = "⬆ More advanced"; up.id = "harder"; up.title = "Rewrite at a higher grade level";
+  down.onclick = () => changeLevel(-2, down); up.onclick = () => changeLevel(+2, up);
+  const lvlGroup = document.createElement("span"); lvlGroup.className = "lvlGroup"; lvlGroup.id = "lvlGroup";
+  lvlGroup.append(down, lvl, up);
+  bar.append(copy, txt, docx, add, grade, lvlGroup, count); return bar;
 }
 
 function docText(){
   const d = $("doc"); if (!d) return "";
   return [...d.querySelectorAll("h2, .para p")].map(e => e.textContent.trim()).filter(Boolean).join("\n\n");
 }
-function updateCount(){ const c = $("count"); if (c) c.textContent = countWords(docText().replace(/^.*\n\n/,"")) + " words"; }
+function updateCount(){
+  const c = $("count"); if (c) c.textContent = countWords(docText().replace(/^.*\n\n/,"")) + " words";
+  const chip = $("lvlChip"); if (chip) chip.textContent = gradeName(readingLevel(docText()));
+}
+
+// ---------- reading level (Flesch-Kincaid estimate) ----------
+function syllables(w){
+  w = w.toLowerCase().replace(/[^a-z]/g, ""); if (!w) return 0; if (w.length <= 3) return 1;
+  w = w.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, "").replace(/^y/, "");
+  const m = w.match(/[aeiouy]{1,2}/g); return m ? m.length : 1;
+}
+function readingLevel(text){
+  const body = text.split("\n\n").slice(1).join(" ") || text;
+  const words = body.match(/[A-Za-z']+/g) || []; if (words.length < 15) return null;
+  const sentences = Math.max(1, (body.match(/[.!?]+(\s|$)/g) || []).length);
+  const syl = words.reduce((n, w) => n + syllables(w), 0);
+  return Math.max(1, Math.min(16, 0.39 * (words.length / sentences) + 11.8 * (syl / words.length) - 15.59));
+}
+function gradeName(g){
+  if (g == null) return "Level: —";
+  const r = Math.round(g);
+  return r >= 13 ? "Level: College" : `Level: Grade ${r}`;
+}
+async function changeLevel(dir, btn){
+  const text = docText(); if (!text) return;
+  const now = readingLevel(text) ?? Number($("level").value || 8);
+  const target = Math.max(2, Math.min(14, Math.round(now) + dir));
+  const label = target >= 13 ? "college" : `grade ${target}`;
+  document.querySelectorAll("#lvlGroup button").forEach(b => b.disabled = true);
+  const old = btn.textContent; btn.textContent = dir < 0 ? "Simplifying…" : "Leveling up…";
+  try {
+    const title = $("doc").querySelector("h2")?.textContent || "";
+    const out = await ask({ ...common(), action:"level", essay: text, target: label, direction: dir < 0 ? "simpler" : "more advanced" });
+    renderDoc(out);
+    setStatus(`Rewritten at about a ${label} reading level.`);
+  } catch(e){ setStatus(e.message, true); }
+  document.querySelectorAll("#lvlGroup button").forEach(b => b.disabled = false);
+  btn.textContent = old;
+}
 
 function download(kind){
   const text = docText(); if (!text) return;

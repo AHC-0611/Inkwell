@@ -41,7 +41,7 @@ function buildPrompt(b) {
     : "Write in a natural, clear, human voice with correct punctuation and grammar. Avoid cliches and filler.\n\n";
 
   const type = clip(b.type, 120) || "essay";
-  const meta = `Type / format: ${type}. Target length: about ${Number(b.length) || 500} words. Tone: ${clip(b.tone, 60) || "match the sample"}.
+  const meta = `Type / format: ${type}. Target length: about ${Number(b.length) || 500} words. Tone: ${clip(b.tone, 60) || "match the sample"}. Reading level: ${b.level ? (Number(b.level) >= 13 ? "college" : "about grade " + Number(b.level) + " (use vocabulary and sentence length a student in that grade would)") : "match the writer's sample"}.
 If the format is a known writing structure (for example RACES = Restate the question, Answer it, Cite evidence, Explain the evidence, Summarize; also CER, ACE, PEEL, TEA, five-paragraph), follow every part of that structure in order, but write it as smooth normal paragraphs without labeling the parts.`;
 
   const links = (Array.isArray(b.links) ? b.links : []).filter((u) => /^https?:\/\//i.test(u)).slice(0, 5);
@@ -75,6 +75,13 @@ Reply with ONLY JSON in exactly this shape:
  "strengths": ["...", "..."],
  "fixes": [{"quote": "exact short piece of their text", "problem": "...", "fix": "..."}]}
 Give 3-6 fixes, most important first.
+
+<writing>
+${clip(b.essay, 15000)}
+</writing>`;
+    case "level":
+      return `${style}${ctx}Rewrite the WHOLE piece below so it reads at about a ${clip(b.target, 30)} reading level (${b.direction === "simpler" ? "simpler: shorter sentences, more common words, explain ideas plainly" : "more advanced: richer vocabulary, more varied and complex sentences, deeper analysis"}).
+Keep the same ideas, structure, format and paragraph count. Keep every direct quote and citation exactly as it is. Keep the writer's voice. Include the title on the first line. ${rules}
 
 <writing>
 ${clip(b.essay, 15000)}
@@ -140,7 +147,7 @@ export default async function handler(req, res) {
   if (tooMany(ip)) return res.status(429).json({ error: "Slow down a little — try again in a minute." });
 
   const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
-  if (!clip(body.prompt, 10).trim() && body.action !== "rewrite" && !cleanFiles(body.files).length && !["grade", "revise"].includes(body.action)) {
+  if (!clip(body.prompt, 10).trim() && body.action !== "rewrite" && !cleanFiles(body.files).length && !["grade", "revise", "level"].includes(body.action)) {
     return res.status(400).json({ error: "Add a prompt or upload your assignment first." });
   }
 
