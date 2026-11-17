@@ -78,6 +78,10 @@
   .bar{display:flex;gap:8px;flex-wrap:wrap;max-width:760px;margin:0 auto 22px;align-items:center}
   .bar .count{margin-left:auto;color:var(--muted);font-size:13px}
   .saved{font-size:12px;color:var(--accent)}
+  .topicRow{margin-top:8px}
+  .topicRow button{font-size:13px;padding:6px 11px}
+  .topic{margin-top:8px;background:var(--panel2);border:1px dashed var(--accent);border-radius:8px;padding:10px 12px;font-size:14px;font-family:var(--serif)}
+  .topic small{display:block;font-family:var(--sans);color:var(--muted);font-size:12px;margin-top:4px}
   .lvlGroup{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .lvlGroup button{border:none;border-radius:0;font-size:13px;padding:8px 11px}
   .lvl{font-size:12px;color:var(--accent2);padding:0 10px;border-left:1px solid var(--line);border-right:1px solid var(--line);align-self:stretch;display:flex;align-items:center;background:var(--panel);white-space:nowrap}
@@ -140,6 +144,10 @@
         <textarea id="sample" rows="7" placeholder="Paste a paragraph or two you wrote yourself, or tap Speak and talk naturally for 30 seconds."></textarea>
         <button class="mic" data-target="sample">🎤 Speak</button>
       </div>
+      <div class="topicRow">
+        <button type="button" id="topicBtn">🎲 Give me something to talk about</button>
+      </div>
+      <div class="topic" id="topic" hidden></div>
       <div class="hint"><span id="sampleWords">0</span> words · 100+ words works best <span class="saved" id="savedNote"></span></div>
       <div class="toggle" id="voice" style="margin-top:10px">
         <button data-voice="polished" class="on">✨ Polished</button>
@@ -245,6 +253,13 @@
       <div class="hint"><span id="essayWords">0</span> words</div>
       <label for="rubric" style="margin-top:14px">Assignment or rubric (optional)</label>
       <textarea id="rubric" rows="3" placeholder="Paste the question, prompt or rubric — or upload a photo of it on the left"></textarea>
+      <div class="row" style="margin-top:14px;max-width:360px" id="gradeAsBox">
+        <div>
+          <label for="gradeAs">Grade it as</label>
+          <select id="gradeAs"><option value="3">Grades 3–4</option><option value="5">Grades 5–6</option><option value="7" selected>Grades 7–8</option><option value="9">Grades 9–10</option><option value="11">Grades 11–12</option><option value="13">College</option></select>
+        </div>
+      </div>
+      <div class="hint">A 7th-grade essay gets graded like a 7th-grade teacher would, not a college professor.</div>
       <div class="bar" style="margin:14px 0 0;max-width:none">
         <button class="primary" id="gradeBtn">Grade it</button>
         <span class="status" id="gStatus"></span>
@@ -260,6 +275,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+const esc = (t) => String(t ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const store = {
   get(k){ try{ return localStorage.getItem(k) }catch{ return null } },
   set(k,v){ try{ localStorage.setItem(k,v) }catch{} }
@@ -286,6 +302,33 @@ document.querySelectorAll("#mode button").forEach(b => b.onclick = () => {
   $("go").textContent = mode === "draft" ? "Write it" : "Make outline";
 });
 
+// ---------- talking topics for the voice sample ----------
+const TOPICS = [
+  "Describe your perfect weekend from the moment you wake up.",
+  "What's a movie, show or game you think everyone should try, and why?",
+  "Explain how to do something you're good at, step by step.",
+  "Tell the story of the funniest thing that happened to you this year.",
+  "If you could change one rule at school, what would it be and why?",
+  "Describe a place you love going to. What makes it special?",
+  "What's an opinion you have that most people disagree with? Defend it.",
+  "Talk about a time you had to figure something out on your own.",
+  "If you had $1,000 to spend in one day, what would you do?",
+  "Describe your favorite food like you're trying to convince someone to try it.",
+  "What would you do with a whole day where nobody needs anything from you?",
+  "Is it better to be really good at one thing or okay at lots of things?",
+  "Explain something you learned recently to someone who's never heard of it.",
+  "What makes someone a good friend? Give an example.",
+  "Should phones be allowed in class? Argue your side.",
+];
+let lastTopic = -1;
+$("topicBtn").onclick = () => {
+  let i; do { i = Math.floor(Math.random() * TOPICS.length); } while (i === lastTopic && TOPICS.length > 1);
+  lastTopic = i;
+  $("topic").hidden = false;
+  $("topic").innerHTML = `${esc(TOPICS[i])}<small>Hit 🎤 Speak and talk about this for 30–60 seconds. Just talk normally — it only learns how you sound, not what you say.</small>`;
+  $("topicBtn").textContent = "🎲 Different topic";
+};
+
 // ---------- Polished / Like me ----------
 let voice = store.get("inkwell.voice") || "polished";
 function setVoice(v){
@@ -306,10 +349,11 @@ function showTab(t){
   clearTip(); if (t === "grade") runTips("grade");
 }
 document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+$("gradeAs").value = store.get("inkwell.gradeAs") || "7";
+$("gradeAs").onchange = () => store.set("inkwell.gradeAs", $("gradeAs").value);
 $("essay").addEventListener("input", () => $("essayWords").textContent = countWords($("essay").value));
 
 // ---------- grading ----------
-const esc = (t) => String(t ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 let lastGrade = null;
 function gStatus(msg, err){ $("gStatus").textContent = msg || ""; $("gStatus").className = "status" + (err ? " err" : ""); }
 
@@ -318,7 +362,7 @@ $("gradeBtn").onclick = async () => {
   if (countWords(essay) < 20) return gStatus("Paste at least a few sentences to grade.", true);
   $("gradeBtn").disabled = true; gStatus("Grading…");
   try {
-    const raw = await ask({ ...common(), action:"grade", essay, rubric: $("rubric").value });
+    const raw = await ask({ ...common(), action:"grade", essay, rubric: $("rubric").value, gradeAs: $("gradeAs").value });
     const g = JSON.parse(raw.replace(/^```(json)?|```$/g, "").trim());
     lastGrade = g; drawGrade(g); gStatus("");
   } catch(e){ gStatus(e instanceof SyntaxError ? "The grader got confused — try again." : e.message, true); }
@@ -342,33 +386,80 @@ function drawGrade(g){
     ${g.strengths?.length ? `<div class="card"><h4>What you did well</h4><ul>${g.strengths.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
     ${fixes ? `<div class="card"><h4>What to fix</h4>${fixes}</div>` : ""}
     <div class="card"><h4>Rewrite it</h4>
-      <div class="bar" style="margin:0 0 10px;max-width:none">
-        <button data-r="Fix everything in the feedback to raise the grade">Fix everything</button>
-        <button data-r="Only fix spelling, grammar and punctuation. Change nothing else">Grammar only</button>
-        <button data-r="Improve the evidence and explanation parts using the feedback">Better evidence</button>
+      <div class="row" style="margin-bottom:12px">
+        <div><label for="rLevel">Write it at</label><select id="rLevel"><option value="3">Grades 3–4</option><option value="5">Grades 5–6</option><option value="7">Grades 7–8</option><option value="9">Grades 9–10</option><option value="11">Grades 11–12</option><option value="13">College</option></select></div>
+        <div><label for="rGoal">Grade I'm aiming for</label><select id="rGoal">
+          <option value="97">A+ (97+)</option><option value="93" selected>A (93+)</option><option value="90">A- (90+)</option>
+          <option value="87">B+ (87+)</option><option value="83">B (83+)</option><option value="80">B- (80+)</option><option value="75">C (75+)</option></select></div>
+        <div><label for="rLen">Length</label><select id="rLen">
+          <option value="same">Keep it the same</option><option value="shorter">Shorter</option><option value="longer">Longer</option></select></div>
       </div>
-      <input id="rInstr" placeholder="Or tell it what to do, e.g. make the intro stronger and add a counterclaim" />
-      <div class="bar" style="margin:10px 0 0;max-width:none"><button class="primary" id="rGo">Rewrite with my instructions</button>
-      <span class="hint" style="margin:0">Uses your ✨ Polished / 🗣️ Like me setting.</span></div>
+      <div class="bar" style="margin:0 0 10px;max-width:none">
+        <button data-r="Fix everything in the feedback">Fix everything</button>
+        <button data-r="Only fix spelling, grammar and punctuation. Change nothing else">Grammar only</button>
+        <button data-r="Improve the evidence and explanation using the feedback">Better evidence</button>
+        <button data-r="Make the intro and conclusion stronger">Stronger intro &amp; ending</button>
+        <button data-r="Make the argument more convincing and add a counterclaim with a rebuttal">More convincing</button>
+        <button data-r="Make it flow better with smoother transitions between ideas">Better flow</button>
+      </div>
+      <input id="rInstr" placeholder="Or tell it what to do, e.g. use more examples from the article" />
+      <div class="bar" style="margin:10px 0 0;max-width:none">
+        <button class="primary" id="rGoal1">Rewrite until it hits my goal</button>
+        <button id="rGo">Rewrite once</button>
+        <span class="hint" style="margin:0">Uses your ✨ Polished / 🗣️ Like me setting.</span>
+      </div>
+      <div class="hint" id="rProgress"></div>
     </div>`;
-  $("gradeOut").querySelectorAll("[data-r]").forEach(b => b.onclick = () => revise(b.dataset.r, b));
-  $("rGo").onclick = () => revise($("rInstr").value.trim() || "Fix everything in the feedback", $("rGo"));
+  $("rLevel").value = $("gradeAs").value;
+  $("rGo").onclick = () => revise($("rInstr").value.trim() || "Fix everything in the feedback", $("rGo"), 1);
+  $("rGoal1").onclick = () => revise($("rInstr").value.trim() || "Fix everything in the feedback", $("rGoal1"), 3);
+  $("gradeOut").querySelectorAll("[data-r]").forEach(b => b.onclick = () => revise(b.dataset.r, b, 1));
 }
 
-async function revise(instruction, btn){
-  btn.disabled = true; const old = btn.textContent; btn.textContent = "Rewriting…";
+async function gradeText(essay){
+  const raw = await ask({ ...common(), action:"grade", essay, rubric: $("rubric").value, gradeAs: $("gradeAs").value });
+  return JSON.parse(raw.replace(/^```(json)?|```$/g, "").trim());
+}
+async function revise(instruction, btn, rounds){
+  const goal = Number($("rGoal").value), level = $("rLevel").value, length = $("rLen").value;
+  const startScore = Number(lastGrade?.score) || 0;
+  document.querySelectorAll("#gradeOut button").forEach(b => b.disabled = true);
+  const old = btn.textContent; const prog = $("rProgress");
   try {
-    const feedback = lastGrade ? JSON.stringify({ summary:lastGrade.summary, categories:lastGrade.categories, fixes:lastGrade.fixes }) : "";
-    const text = await ask({ ...common(), action:"revise", essay: $("essay").value, feedback, instruction });
-    renderDoc(text); showTab("write"); setStatus("Rewritten! Hit “Grade this” to see the new score.");
-  } catch(e){ gStatus(e.message, true); }
-  btn.disabled = false; btn.textContent = old;
+    let g = lastGrade, essay = $("essay").value;
+    for (let r = 1; r <= rounds; r++){
+      btn.textContent = rounds > 1 ? `Round ${r} of ${rounds}: rewriting…` : "Rewriting…";
+      const feedback = g ? JSON.stringify({ score:g.score, categories:g.categories, fixes:g.fixes }) : "";
+      const text = await ask({ ...common(), action:"revise", essay, feedback, instruction, level, goal, lengthMode: length, gradeAs: $("gradeAs").value });
+      essay = text;
+      btn.textContent = rounds > 1 ? `Round ${r} of ${rounds}: grading…` : "Grading the new version…";
+      g = await gradeText(essay);
+      if (prog) prog.textContent = `Round ${r}: ${g.score}/100`;
+      if (Number(g.score) >= goal) break;
+      instruction = "Fix everything that is still in the feedback";
+    }
+    $("essay").value = essay; $("essay").dispatchEvent(new Event("input"));
+    lastGrade = g; drawGrade(g);
+    const diff = Number(g.score) - startScore;
+    const hit = Number(g.score) >= goal;
+    $("gradeOut").insertAdjacentHTML("afterbegin", `<div class="card" style="border-color:var(--accent)">
+      <b>${startScore} → ${esc(g.score)}</b> (${diff >= 0 ? "+" : ""}${diff})
+      ${hit ? " — hit your goal! 🎉" : ` — didn't quite reach ${goal} yet. Try "Rewrite until it hits my goal" again or add an instruction.`}
+      <div class="bar" style="margin:10px 0 0;max-width:none"><button id="openEd">Open in editor</button><button id="copyNew">Copy</button></div></div>`);
+    $("openEd").onclick = () => { renderDoc(essay); showTab("write"); };
+    $("copyNew").onclick = async () => { try { await navigator.clipboard.writeText(essay); $("copyNew").textContent = "Copied ✓"; } catch {} };
+    window.scrollTo({ top: $("gradeView").offsetTop, behavior: "smooth" });
+  } catch(e){
+    gStatus(e instanceof SyntaxError ? "The grader got confused — try again." : e.message, true);
+    document.querySelectorAll("#gradeOut button").forEach(b => b.disabled = false); btn.textContent = old;
+  }
 }
 
 // ---------- first-time tips ----------
 const TIPS = {
   start: [
     ["#sample",   "Start with your writing", "Paste something you wrote, or hit 🎤 Speak and just talk. It learns how you sound."],
+    ["#topicBtn", "Don't know what to say?", "Tap here for a random topic to talk about. It only copies how you talk, not what you say."],
     ["#voice",    "Polished or Like me?", "Polished = perfect grammar. Like me = keeps your slang and the mistakes you always make."],
     ["#levelBox", "Grade level", "You can change the grade level and how complex the writing is here."],
     ["#drop",     "Add sources", "Upload photos, PDFs or screenshots — or paste links above. It quotes them as evidence."],
@@ -381,6 +472,7 @@ const TIPS = {
   ],
   grade: [
     ["#rubric",   "Grade it fairly", "Paste the assignment or rubric so it grades you on what your teacher actually wants."],
+    ["#gradeAsBox", "Pick your grade level", "Choose what grade it should grade you as. A 7th-grade essay is graded differently than a college paper."],
   ],
 };
 let tipEl = null, ringEl = null;

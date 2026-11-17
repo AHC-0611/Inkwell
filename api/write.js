@@ -11,7 +11,7 @@ const MODELS = [
 
 // Simple per-visitor limit so one person can't burn your whole daily quota.
 const hits = new Map();
-const LIMIT_PER_MIN = 6;
+const LIMIT_PER_MIN = 14;
 
 function tooMany(ip) {
   const now = Date.now();
@@ -30,6 +30,8 @@ function cleanFiles(list) {
     .slice(0, 6);
 }
 
+const gradeLabel = (v) => !v ? "grade 7-8" : Number(v) >= 13 ? "college" : `grade ${Number(v)}-${Number(v) + 1}`;
+
 function buildPrompt(b) {
   const sample = clip(b.sample, 6000).trim();
   const natural = b.voice === "natural";
@@ -37,7 +39,8 @@ function buildPrompt(b) {
     ? `VOICE MODE: "Like me". Copy the writer's habits too, not just their words: slang, casual phrasing, sentence patterns (run-ons, short fragments, starting sentences with "And" or "So"), and any mistakes they make CONSISTENTLY, meaning the same misspelling, word mix-up or grammar slip showing up more than once (for example "alot", there/their, "could of", missing commas before "but"). Repeat those habits at about the same rate they appear in the sample. Do NOT invent new random mistakes they never made. If the sample has no punctuation at all, it is probably a voice transcript, so still end sentences with normal punctuation and capitals.`
     : `VOICE MODE: "Polished". Sound like the writer, but with 100% correct spelling, grammar, punctuation and capitalization. Fix any mistakes or habits from the sample instead of copying them.`;
   const style = sample
-    ? `Here is a sample of the writer's own writing. Study their voice: sentence length, word choice, vocabulary level, how they start and end paragraphs, and their tone. Write so it sounds like THEM, not like an AI. Do not copy sentences from the sample.\n${voiceRules}\n\n<sample>\n${sample}\n</sample>\n\n`
+    ? `Here is a sample of the writer's own writing. Study their voice: sentence length, word choice, vocabulary level, how they start and end paragraphs, and their tone. Write so it sounds like THEM, not like an AI. Do not copy sentences from the sample.
+STRICT RULE: the sample is ONLY for HOW they write, never for WHAT to write. It may be random rambling or a voice recording about unrelated stuff. NEVER bring any facts, opinions, stories, people, foods, hobbies, details or topics from the sample into the writing (for example if they mentioned they don't eat dairy, that must not appear). The content must come only from the prompt and the sources.\n${voiceRules}\n\n<sample>\n${sample}\n</sample>\n\n`
     : "Write in a natural, clear, human voice with correct punctuation and grammar. Avoid cliches and filler.\n\n";
 
   const type = clip(b.type, 120) || "essay";
@@ -67,7 +70,7 @@ If the format is a known writing structure (for example RACES = Restate the ques
     case "expand":
       return `${style}${ctx}${meta}\nOverall topic: ${clip(b.prompt, 3000)}\nFull outline for context:\n${clip(b.context, 6000)}\n\nWrite ONLY the section below as finished paragraphs (about ${Math.max(80, Math.round((Number(b.length) || 500) / Math.max(1, Number(b.sections) || 4)))} words). ${rules}\n\nSection to write:\n${clip(b.paragraph, 2000)}`;
     case "grade":
-      return `You are a fair but honest teacher grading a student's writing.\n${meta.replace(/Target length[^.]*\.\s*/, "")}\n${clip(b.rubric, 3000) ? "Assignment / rubric to grade against:\n" + clip(b.rubric, 3000) + "\n" : ""}${nFiles ? "Attached files may show the assignment, rubric or source text — use them.\n" : ""}${pasted ? "Source text the student was supposed to use:\n" + pasted + "\n" : ""}
+      return `You are a fair but honest teacher grading a student's writing.\nGrade it as a ${gradeLabel(b.gradeAs)} assignment: judge it against what a strong ${gradeLabel(b.gradeAs)} student can do, not against adult or professional writing. Be consistent: if the writing does everything the assignment asks with only minor slips, it deserves an A range score.\n${meta.replace(/Target length[^.]*\.\s*/, "")}\n${clip(b.rubric, 3000) ? "Assignment / rubric to grade against:\n" + clip(b.rubric, 3000) + "\n" : ""}${nFiles ? "Attached files may show the assignment, rubric or source text — use them.\n" : ""}${pasted ? "Source text the student was supposed to use:\n" + pasted + "\n" : ""}
 Grade the writing below. If a structure like RACES/CER/ACE was asked for, check every part is there. Check that quotes are real and explained.
 Reply with ONLY JSON in exactly this shape:
 {"score": 0-100, "letter": "A+ to F", "summary": "2 sentences, talk to the student directly",
@@ -86,8 +89,24 @@ Keep the same ideas, structure, format and paragraph count. Keep every direct qu
 <writing>
 ${clip(b.essay, 15000)}
 </writing>`;
-    case "revise":
-      return `${style}${ctx}${meta.replace(/Target length[^.]*\./, "Keep about the same length unless told otherwise.")}\nHere is a piece of writing and a teacher's feedback on it. Rewrite the WHOLE piece.\nWhat to do: ${clip(b.instruction, 500) || "fix everything in the feedback"}.\nKeep the writer's ideas and voice. Include the title on the first line. ${rules}\n\n<feedback>\n${clip(b.feedback, 5000)}\n</feedback>\n\n<writing>\n${clip(b.essay, 15000)}\n</writing>`;
+    case "revise": {
+      const lenRule = b.lengthMode === "shorter" ? "Make it about 25% shorter." : b.lengthMode === "longer" ? "Make it about 40% longer with more detail, evidence and explanation." : "Keep about the same length.";
+      return `${style}${ctx}${meta.replace(/Target length[^.]*\./, lenRule).replace(/Reading level:[^.]*(\([^)]*\))?\./, "")}
+Reading level: write at a ${gradeLabel(b.level)} level (vocabulary and sentence complexity a strong student in that grade would use).
+GOAL: this rewrite must score at least ${Number(b.goal) || 93}/100 when graded as a ${gradeLabel(b.gradeAs || b.level)} assignment.
+Here is the writing and a teacher's grading feedback (JSON). Rewrite the WHOLE piece.
+What to do: ${clip(b.instruction, 500) || "fix everything in the feedback"}.
+Be thorough: fix EVERY item in "fixes", and improve EVERY category scored below 9. Make the claim clear and specific, use strong evidence (quoted exactly from the sources if there are any; never invent quotes), explain how each piece of evidence proves the point, organize with clear topic sentences and transitions, and end with a strong conclusion. If a structure like RACES/CER is required, make every part obvious.
+Keep the writer's main ideas and voice. Include the title on the first line. ${rules}
+
+<feedback>
+${clip(b.feedback, 6000)}
+</feedback>
+
+<writing>
+${clip(b.essay, 15000)}
+</writing>`;
+    }
     case "rewrite":
       return `${style}${ctx}Here is the surrounding text for context:\n${clip(b.context, 8000)}\n\nRewrite ONLY this paragraph. Instruction: ${clip(b.instruction, 300) || "improve it"}. Keep the writer's voice. Return just the new paragraph. ${rules}\n\nParagraph:\n${clip(b.paragraph, 3000)}`;
     default:
