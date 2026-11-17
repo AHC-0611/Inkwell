@@ -203,16 +203,23 @@
     #splash .word path{fill:none;stroke:#e8b04a;stroke-width:3;stroke-linecap:round;stroke-dasharray:130;stroke-dashoffset:130;animation:sDraw .6s 1.55s ease-out forwards}
     #splash .tag{font:14px system-ui,-apple-system,"Segoe UI",sans-serif;color:#9aa0ab;opacity:0;animation:sFade .5s 1.75s forwards}
     #splash .drop{position:absolute;width:12px;height:16px;left:50%;margin-left:-6px;background:#f3c873;border-radius:50% 50% 50% 50%/60% 60% 40% 40%;opacity:0}
-    #splash .ink{position:absolute;inset:0;pointer-events:none;z-index:3}
     #splash .stage{position:relative;z-index:1}
     #splash .drop{z-index:4}#splash .skip{z-index:5}
-    #splash .ink svg{width:100%;height:100%}
-    #splash .blob{fill:#e8b04a;transform:scale(0)}
+    #splash .liquid{position:absolute;left:0;right:0;bottom:-60px;height:calc(100% + 130px);z-index:3;transform:translateY(100%);pointer-events:none}
+    #splash .wave{position:absolute;left:0;top:0;width:200%;height:46px}
+    #splash .wave path{fill:#e8b04a}
+    #splash .w2{opacity:.55;animation:sWave 2.2s linear infinite reverse}
+    #splash .w1{animation:sWave 1.6s linear infinite}
+    #splash .fillBody{position:absolute;left:0;right:0;top:44px;bottom:0;background:#e8b04a}
+    #splash.go .liquid{animation:sFillUp 1.2s .42s cubic-bezier(.45,0,.2,1) forwards}
+    #splash.out{background:transparent;pointer-events:none}
+    #splash.out .stage,#splash.out .skip,#splash.out .drop{display:none}
+    #splash.out .liquid{animation:sDrain .75s cubic-bezier(.55,0,.75,.4) forwards}
+    @keyframes sWave{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+    @keyframes sFillUp{0%{transform:translateY(100%)}100%{transform:translateY(-60px)}}
+    @keyframes sDrain{0%{transform:translateY(-60px)}100%{transform:translateY(105%)}}
     #splash .skip{position:absolute;bottom:22px;left:0;right:0;text-align:center;font:12px system-ui,sans-serif;color:#5b6170;opacity:0;animation:sFade .4s .8s forwards}
     #splash.go .drop{animation:sDrop .55s ease-in forwards}
-    #splash.go .blob{animation:sSpread .9s .5s cubic-bezier(.6,0,.3,1) forwards}
-    #splash.go .b2{animation-delay:.6s}#splash.go .b3{animation-delay:.68s}#splash.go .b4{animation-delay:.74s}
-    #splash.out{animation:sOut .55s ease-in forwards}
     @keyframes sDraw{to{stroke-dashoffset:0}}
     @keyframes sFill{0%{opacity:0;transform:scale(.6)}100%{opacity:1;transform:scale(1)}}
     @keyframes sPop{0%{transform:scale(0)}70%{transform:scale(1.3)}100%{transform:scale(1)}}
@@ -220,17 +227,13 @@
     @keyframes sUp{to{opacity:1;transform:none}}
     @keyframes sShine{to{transform:skewX(-20deg) translateX(110px)}}
     @keyframes sDrop{0%{opacity:1;transform:translateY(0) scale(.6)}80%{opacity:1;transform:translateY(var(--fall)) scaleY(1.3)}100%{opacity:0;transform:translateY(var(--fall)) scale(1.6,.4)}}
-    @keyframes sSpread{0%{transform:scale(0)}100%{transform:scale(1)}}
-    @keyframes sOut{0%{clip-path:circle(150% at 50% 50%)}100%{clip-path:circle(0% at 50% 50%);}}
     @media (prefers-reduced-motion:reduce){#splash{display:none}}
   </style>
-  <div class="ink"><svg viewBox="0 0 100 100" preserveAspectRatio="none">
-    <g style="transform-origin:50% 70%;transform-box:view-box">
-      <path class="blob" style="transform-origin:50px 70px" d="M50 70 m-90 0 c0 -60 40 -95 90 -95 c55 0 95 35 95 95 c0 60 -40 95 -95 95 c-55 0 -90 -40 -90 -95z"/>
-      <circle class="blob b2" style="transform-origin:20px 30px" cx="20" cy="30" r="40"/>
-      <circle class="blob b3" style="transform-origin:85px 20px" cx="85" cy="20" r="45"/>
-      <circle class="blob b4" style="transform-origin:80px 95px" cx="80" cy="95" r="40"/>
-    </g></svg></div>
+  <div class="liquid">
+    <svg class="wave w2" viewBox="0 0 1200 40" preserveAspectRatio="none"><path d="M0 22 Q150 6 300 22 T600 22 T900 22 T1200 22 V40 H0Z"/></svg>
+    <svg class="wave w1" viewBox="0 0 1200 40" preserveAspectRatio="none"><path d="M0 20 Q150 36 300 20 T600 20 T900 20 T1200 20 V40 H0Z"/></svg>
+    <div class="fillBody"></div>
+  </div>
   <div class="stage">
     <svg class="big" viewBox="0 0 64 64">
       <defs><clipPath id="sClip"><path d="M32 4 L50 26 L40 54 H24 L14 26 Z"/></clipPath></defs>
@@ -255,15 +258,18 @@
       document.body.classList.remove("intro");
       sp.remove(); window._introRes();
     }
-    function reveal(){ sp.classList.add("out"); document.body.classList.remove("intro"); timers.push(setTimeout(finish, 560)); }
+    function reveal(){
+      if (!sp.classList.contains("go")) { finish(); return; }
+      sp.classList.add("out"); document.body.classList.remove("intro"); timers.push(setTimeout(finish, 780));
+    }
     if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches){ finish(); return; }
     timers.push(setTimeout(function(){
       var nib = sp.querySelector(".big").getBoundingClientRect(), d = document.getElementById("sDrop");
       d.style.top = (nib.bottom - 4) + "px";
-      d.style.setProperty("--fall", (window.innerHeight * 0.7 - nib.bottom) + "px");
+      d.style.setProperty("--fall", (window.innerHeight - nib.bottom - 18) + "px");
       sp.classList.add("go");
-    }, 2100));
-    timers.push(setTimeout(reveal, 3500));
+    }, 2000));
+    timers.push(setTimeout(reveal, 3750));
     sp.addEventListener("click", reveal);
     window.addEventListener("keydown", function k(){ window.removeEventListener("keydown", k); if (!done) reveal(); });
   })();
