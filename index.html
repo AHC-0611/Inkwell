@@ -126,6 +126,25 @@
   .tip button{background:#1a1405;color:var(--accent2);border:none;padding:5px 11px;font-size:13px;border-radius:7px}
   .tip button.skip{background:transparent;color:#1a1405;text-decoration:underline;padding:5px 4px}
   .tipRing{outline:2px solid var(--accent)!important;outline-offset:4px;border-radius:8px;transition:outline-offset .2s}
+  @keyframes flash{0%{box-shadow:0 0 0 2px var(--accent)}100%{box-shadow:0 0 0 2px transparent}}
+  .flash{animation:flash 1.6s ease-out;border-radius:10px}
+  .loader{max-width:560px;margin:60px auto;text-align:center;font-family:var(--serif)}
+  .loader svg{display:block;margin:0 auto 18px;overflow:visible}
+  .loader .nib{transform-origin:50% 100%;animation:write 1.1s ease-in-out infinite}
+  .loader .drop{animation:drip 1.1s ease-in infinite}
+  .loader .lines{max-width:340px;margin:0 auto 18px}
+  .loader .lines i{display:block;height:8px;border-radius:5px;background:var(--line);margin:10px 0;position:relative;overflow:hidden}
+  .loader .lines i::after{content:"";position:absolute;inset:0;width:0;background:var(--accent);border-radius:5px;animation:ink 2.4s ease-in-out infinite}
+  .loader .lines i:nth-child(2)::after{animation-delay:.4s}.loader .lines i:nth-child(3)::after{animation-delay:.8s}
+  .loader .lines i:nth-child(3){width:70%}
+  .loader .msg{font-size:19px;color:var(--text);min-height:28px;transition:opacity .25s}
+  .loader .sub{font-family:var(--sans);font-size:13px;color:var(--muted);margin-top:6px}
+  @keyframes write{0%,100%{transform:rotate(-12deg) translateX(-14px)}50%{transform:rotate(8deg) translateX(14px)}}
+  @keyframes drip{0%{transform:translateY(0);opacity:0}30%{opacity:1}100%{transform:translateY(16px);opacity:0}}
+  @keyframes ink{0%{width:0}60%{width:100%}100%{width:100%;opacity:.25}}
+  .para.working p{opacity:.45;background:linear-gradient(90deg,transparent,rgba(232,176,74,.18),transparent);background-size:200% 100%;animation:shimmer 1.2s linear infinite}
+  @keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+  @media (prefers-reduced-motion:reduce){.loader *,.para.working p{animation:none!important}}
   @keyframes pop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   body.dragging aside{outline:2px dashed var(--accent);outline-offset:-6px}
 </style>
@@ -364,12 +383,14 @@ function gStatus(msg, err){ $("gStatus").textContent = msg || ""; $("gStatus").c
 $("gradeBtn").onclick = async () => {
   const essay = $("essay").value.trim();
   if (countWords(essay) < 20) return gStatus("Paste at least a few sentences to grade.", true);
-  $("gradeBtn").disabled = true; gStatus("Grading…");
+  $("gradeBtn").disabled = true; gStatus("");
+  $("gradeOut").innerHTML = ""; const ld = showLoader($("gradeOut"), "grade", `Grading as ${$("gradeAs").selectedOptions[0].text}`);
   try {
     const raw = await ask({ ...common(), action:"grade", essay, rubric: $("rubric").value, gradeAs: $("gradeAs").value });
     const g = JSON.parse(raw.replace(/^```(json)?|```$/g, "").trim());
-    lastGrade = g; drawGrade(g); gStatus("");
-  } catch(e){ gStatus(e instanceof SyntaxError ? "The grader got confused — try again." : e.message, true); }
+    ld.done(false); lastGrade = g; drawGrade(g); gStatus("");
+    requestAnimationFrame(() => jumpTo($("gradeOut").querySelector(".score")));
+  } catch(e){ ld.done(true); gStatus(e instanceof SyntaxError ? "The grader got confused — try again." : e.message, true); }
   $("gradeBtn").disabled = false;
 };
 
@@ -429,6 +450,7 @@ async function revise(instruction, btn, rounds){
   const startScore = Number(lastGrade?.score) || 0;
   document.querySelectorAll("#gradeOut button").forEach(b => b.disabled = true);
   const old = btn.textContent; const prog = $("rProgress");
+  const ld = showLoader($("gradeOut"), "revise", rounds > 1 ? `Aiming for ${goal}+ · up to ${rounds} rounds` : "");
   try {
     let g = lastGrade, essay = $("essay").value;
     for (let r = 1; r <= rounds; r++){
@@ -439,9 +461,11 @@ async function revise(instruction, btn, rounds){
       btn.textContent = rounds > 1 ? `Round ${r} of ${rounds}: grading…` : "Grading the new version…";
       g = await gradeText(essay);
       if (prog) prog.textContent = `Round ${r}: ${g.score}/100`;
+      ld.sub(`Round ${r}: scored ${g.score}/100${Number(g.score) >= goal || r === rounds ? "" : " — going again…"}`);
       if (Number(g.score) >= goal) break;
       instruction = "Fix everything that is still in the feedback";
     }
+    ld.done(false);
     $("essay").value = essay; $("essay").dispatchEvent(new Event("input"));
     lastGrade = g; drawGrade(g);
     const diff = Number(g.score) - startScore;
@@ -452,8 +476,9 @@ async function revise(instruction, btn, rounds){
       <div class="bar" style="margin:10px 0 0;max-width:none"><button id="copyNew" class="primary">📋 Copy essay</button><button id="openEd">Open in editor</button></div></div>`);
     $("openEd").onclick = () => { renderDoc(essay); showTab("write"); };
     $("copyNew").onclick = () => copyText(essay, $("copyNew"), "📋 Copy essay");
-    window.scrollTo({ top: $("gradeView").offsetTop, behavior: "smooth" });
+    requestAnimationFrame(() => jumpTo($("gradeOut").firstElementChild));
   } catch(e){
+    ld.done(true);
     gStatus(e instanceof SyntaxError ? "The grader got confused — try again." : e.message, true);
     document.querySelectorAll("#gradeOut button").forEach(b => b.disabled = false); btn.textContent = old;
   }
@@ -624,13 +649,53 @@ async function ask(payload){
 $("go").onclick = async () => {
   if (!$("prompt").value.trim() && !files.length) return setStatus("Type or say a prompt, or upload a photo of the assignment.", true);
   $("go").disabled = true; setStatus(mode === "draft" ? "Writing…" : "Outlining…");
+  showTab("write");
+  const ld = showLoader($("out"), mode, files.length || $("links").value.trim() ? "Reading your sources can take a little longer." : "");
   try {
     const text = await ask({ ...common(), action: mode });
+    ld.done(false);
     mode === "draft" ? renderDoc(text) : renderOutline(text);
     setStatus("");
-  } catch(e){ setStatus(e.message, true); }
+  } catch(e){ ld.done(true); setStatus(e.message, true); }
   $("go").disabled = false;
 };
+
+// ---------- loading animation ----------
+const LOAD_MSGS = {
+  draft:   ["Studying how you write…", "Reading your sources…", "Planning the paragraphs…", "Writing in your voice…", "Checking punctuation…", "Almost done…"],
+  outline: ["Reading the prompt…", "Finding the main idea…", "Building your outline…"],
+  grade:   ["Reading your essay…", "Checking your evidence…", "Looking at grammar…", "Scoring each part…"],
+  revise:  ["Reading the feedback…", "Fixing each problem…", "Rewriting in your voice…", "Grading the new version…"],
+  level:   ["Adjusting the words…", "Changing sentence length…", "Keeping your quotes exact…"],
+};
+function showLoader(container, kind, sub){
+  const kids = [...container.children]; kids.forEach(k => k.style.display = "none");
+  const el = document.createElement("div"); el.className = "loader";
+  el.innerHTML = `<svg width="70" height="78" viewBox="0 0 64 72" aria-hidden="true">
+      <g class="nib"><path d="M32 4 L50 26 L40 54 H24 L14 26 Z" fill="var(--accent)"/><line x1="32" y1="22" x2="32" y2="54" stroke="var(--bg)" stroke-width="2.5"/><circle cx="32" cy="22" r="4.5" fill="var(--bg)"/>
+      <circle class="drop" cx="32" cy="58" r="3" fill="var(--accent2)"/></g></svg>
+    <div class="lines"><i></i><i></i><i></i></div>
+    <div class="msg"></div><div class="sub"></div>`;
+  container.appendChild(el);
+  const msgs = LOAD_MSGS[kind] || LOAD_MSGS.draft; let i = 0;
+  const m = el.querySelector(".msg"), sb = el.querySelector(".sub");
+  m.textContent = msgs[0]; sb.textContent = sub || "";
+  const t = setInterval(() => { i = Math.min(i + 1, msgs.length - 1); m.style.opacity = 0; setTimeout(() => { m.textContent = msgs[i]; m.style.opacity = 1; }, 250); }, 2200);
+  requestAnimationFrame(() => jumpTo(container, el));
+  return {
+    sub(text){ sb.textContent = text; },
+    done(restore){ clearInterval(t); el.remove(); if (restore) kids.forEach(k => k.style.display = ""); }
+  };
+}
+
+// ---------- jump to new results ----------
+function jumpTo(el, flashEl){
+  if (!el) return;
+  const y = el.getBoundingClientRect().top + window.scrollY - 16;
+  window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+  const f = flashEl || el;
+  f.classList.remove("flash"); void f.offsetWidth; f.classList.add("flash");
+}
 
 // ---------- rendering the draft ----------
 function splitParas(text){ return text.replace(/\r/g,"").split(/\n\s*\n/).map(s => s.trim()).filter(Boolean); }
@@ -645,7 +710,8 @@ function renderDoc(text, keepTitle){
   if (title){ const h = document.createElement("h2"); h.contentEditable = true; h.textContent = title; doc.appendChild(h); }
   parts.forEach(p => doc.appendChild(paraEl(p)));
   out.appendChild(doc); updateCount();
-  setTimeout(() => runTips("draft"), 400);
+  requestAnimationFrame(() => jumpTo(out, doc));
+  setTimeout(() => runTips("draft"), 900);
 }
 
 function paraEl(text){
@@ -665,10 +731,12 @@ function paraEl(text){
 
 async function rewrite(p, instruction, btn){
   btn.disabled = true; const old = btn.textContent; btn.textContent = "…";
+  const para = p.closest(".para"); para.classList.add("working");
   try {
     const text = await ask({ ...common(), action:"rewrite", paragraph: p.textContent, instruction, context: docText() });
     p.textContent = splitParas(text).join("\n\n"); updateCount();
   } catch(e){ setStatus(e.message, true); }
+  para.classList.remove("working");
   btn.disabled = false; btn.textContent = old;
 }
 
@@ -740,12 +808,13 @@ async function changeLevel(dir, btn){
   const label = target >= 13 ? "college" : `grade ${target}`;
   document.querySelectorAll("#lvlGroup button").forEach(b => b.disabled = true);
   const old = btn.textContent; btn.textContent = dir < 0 ? "Simplifying…" : "Leveling up…";
+  const ld = showLoader($("out"), "level", `Rewriting at a ${label} level`);
   try {
     const title = $("doc").querySelector("h2")?.textContent || "";
     const out = await ask({ ...common(), action:"level", essay: text, target: label, direction: dir < 0 ? "simpler" : "more advanced" });
-    renderDoc(out);
+    ld.done(false); renderDoc(out);
     setStatus(`Rewritten at about a ${label} reading level.`);
-  } catch(e){ setStatus(e.message, true); }
+  } catch(e){ ld.done(true); setStatus(e.message, true); }
   document.querySelectorAll("#lvlGroup button").forEach(b => b.disabled = false);
   btn.textContent = old;
 }
@@ -785,6 +854,7 @@ function renderOutline(text){
   const note = document.createElement("span"); note.className = "count"; note.textContent = "You can edit the outline before writing.";
   bar.append(all, note);
   wrap.append(head, bar); out.appendChild(wrap);
+  requestAnimationFrame(() => jumpTo(wrap));
 }
 
 async function expandAll(sections, btn){
@@ -792,15 +862,17 @@ async function expandAll(sections, btn){
   btn.disabled = true;
   const thesis = (lastOutline.match(/Thesis:\s*(.*)/i) || [,""])[1];
   const pieces = [];
+  const ld = showLoader($("out"), "draft");
   try {
     for (let i = 0; i < sections.length; i++){
-      setStatus(`Writing section ${i+1} of ${sections.length}…`);
+      setStatus(`Writing section ${i+1} of ${sections.length}…`); ld.sub(`Section ${i+1} of ${sections.length}`);
       const t = await ask({ ...common(), action:"expand", paragraph: sections[i].lines.join("\n"), context: lastOutline, sections: sections.length });
       pieces.push(t);
     }
+    ld.done(false);
     renderDoc(pieces.join("\n\n"), thesis ? $("prompt").value.trim().slice(0,90) : "");
     setStatus("");
-  } catch(e){ setStatus(e.message, true); btn.disabled = false; }
+  } catch(e){ ld.done(true); setStatus(e.message, true); btn.disabled = false; }
 }
 </script>
 </body>
