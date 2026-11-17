@@ -30,6 +30,46 @@ function cleanFiles(list) {
     .slice(0, 6);
 }
 
+// ---------- grading safety net: too-short work can't score high, no matter what the AI says ----------
+function minWords(type, gradeAs) {
+  const g = Number(gradeAs) || 7;
+  const paragraph = /paragraph|races|cer\b|ace\b|peel|tea\b|response|answer/i.test(type || "") && !/essay|paper|multiple/i.test(type || "");
+  if (paragraph) return g >= 13 ? 150 : g >= 9 ? 110 : g >= 7 ? 90 : g >= 5 ? 70 : 50;
+  if (/research|paper/i.test(type || "")) return g >= 13 ? 1200 : g >= 9 ? 700 : g >= 7 ? 500 : 300;
+  return g >= 13 ? 800 : g >= 11 ? 500 : g >= 9 ? 400 : g >= 7 ? 300 : g >= 5 ? 200 : 120;
+}
+function letterFor(n) {
+  return n >= 97 ? "A+" : n >= 93 ? "A" : n >= 90 ? "A-" : n >= 87 ? "B+" : n >= 83 ? "B" : n >= 80 ? "B-" :
+         n >= 77 ? "C+" : n >= 73 ? "C" : n >= 70 ? "C-" : n >= 67 ? "D+" : n >= 63 ? "D" : n >= 60 ? "D-" : "F";
+}
+function enforceGrade(raw, body) {
+  let g; try { g = JSON.parse(String(raw).replace(/^```(json)?|```$/g, "").trim()); } catch { return raw; }
+  const words = (String(body.essay || "").match(/[A-Za-z0-9']+/g) || []).length;
+  const sentences = Math.max(1, (String(body.essay || "").match(/[.!?]+(\s|$)/g) || []).length);
+  const need = minWords(body.type, body.gradeAs);
+  const ratio = words / need;
+  let cap = 100;
+  if (sentences <= 1 && words < 40) cap = 15;
+  else if (ratio < 0.15) cap = 20;
+  else if (ratio < 0.3) cap = 35;
+  else if (ratio < 0.5) cap = 55;
+  else if (ratio < 0.7) cap = 72;
+  else if (ratio < 0.85) cap = 85;
+  let score = Math.round(Math.max(0, Math.min(100, Number(g.score) || 0)));
+  if (score > cap) {
+    const scale = cap / Math.max(1, score);
+    score = cap;
+    (g.categories || []).forEach((c) => { c.score = Math.max(0, Math.min(10, Math.round((Number(c.score) || 0) * scale))); });
+    const label = gradeLabel(body.gradeAs);
+    g.summary = `This is too short to be a complete ${String(body.type || "essay").toLowerCase()} at a ${label} level (${words} word${words === 1 ? "" : "s"}; aim for at least ${need}). ` + (g.summary || "");
+    g.fixes = [{ quote: "", problem: `Only ${words} words. A ${label} ${String(body.type || "essay").toLowerCase()} needs about ${need}+ words to fully answer the question.`, fix: "Add more development: explain your claim, add evidence, explain how the evidence supports it, and finish with a conclusion." }, ...(g.fixes || [])].slice(0, 6);
+  }
+  g.score = score;
+  g.letter = letterFor(score);
+  g.words = words; g.expectedWords = need;
+  return JSON.stringify(g);
+}
+
 const gradeLabel = (v) => !v ? "grade 7-8" : Number(v) >= 13 ? "college" : `grade ${Number(v)}-${Number(v) + 1}`;
 
 function buildPrompt(b) {
@@ -70,7 +110,9 @@ If the format is a known writing structure (for example RACES = Restate the ques
     case "expand":
       return `${style}${ctx}${meta}\nOverall topic: ${clip(b.prompt, 3000)}\nFull outline for context:\n${clip(b.context, 6000)}\n\nWrite ONLY the section below as finished paragraphs (about ${Math.max(80, Math.round((Number(b.length) || 500) / Math.max(1, Number(b.sections) || 4)))} words). ${rules}\n\nSection to write:\n${clip(b.paragraph, 2000)}`;
     case "grade":
-      return `You are a fair but honest teacher grading a student's writing.\nGrade it as a ${gradeLabel(b.gradeAs)} assignment: judge it against what a strong ${gradeLabel(b.gradeAs)} student can do, not against adult or professional writing. Be consistent: if the writing does everything the assignment asks with only minor slips, it deserves an A range score.\n${meta.replace(/Target length[^.]*\.\s*/, "")}\n${clip(b.rubric, 3000) ? "Assignment / rubric to grade against:\n" + clip(b.rubric, 3000) + "\n" : ""}${nFiles ? "Attached files may show the assignment, rubric or source text — use them.\n" : ""}${pasted ? "Source text the student was supposed to use:\n" + pasted + "\n" : ""}
+      return `You are a fair but honest teacher grading a student's writing.\nGrade it as a ${gradeLabel(b.gradeAs)} assignment: judge it against what a strong ${gradeLabel(b.gradeAs)} student can do, not against adult or professional writing. Be STRICT and realistic, like a real teacher. Do not round up or be encouraging with the number.
+Score scale: 93-100 = excellent and complete for this grade level; 83-92 = good with small problems; 73-82 = meets the basics; 60-72 = weak or missing important parts; below 60 = failing.
+Length and completeness matter a lot: work that is far too short for the assignment and grade level (for example one or two sentences for an essay, or a paragraph that is missing parts of its required structure) is incomplete and must score below 40, and a single sentence should score below 20. Missing evidence when evidence is expected caps the score at 70. ${b.wordGuide ? "Expected length: " + clip(b.wordGuide, 80) + "." : ""}\n${meta.replace(/Target length[^.]*\.\s*/, "")}\n${clip(b.rubric, 3000) ? "Assignment / rubric to grade against:\n" + clip(b.rubric, 3000) + "\n" : ""}${nFiles ? "Attached files may show the assignment, rubric or source text — use them.\n" : ""}${pasted ? "Source text the student was supposed to use:\n" + pasted + "\n" : ""}
 Grade the writing below. If a structure like RACES/CER/ACE was asked for, check every part is there. Check that quotes are real and explained.
 Reply with ONLY JSON in exactly this shape:
 {"score": 0-100, "letter": "A+ to F", "summary": "2 sentences, talk to the student directly",
@@ -173,7 +215,9 @@ export default async function handler(req, res) {
   try {
     const isGrade = body.action === "grade";
     const readLinks = !isGrade && Array.isArray(body.links) && body.links.some((u) => /^https?:\/\//i.test(u));
-    const { text, failed } = await callGemini(buildPrompt(body), key, readLinks, cleanFiles(body.files), isGrade);
+    if (isGrade) body.wordGuide = `about ${minWords(body.type, body.gradeAs)}+ words for a ${gradeLabel(body.gradeAs)} ${body.type || "essay"}`;
+    const { text: rawText, failed } = await callGemini(buildPrompt(body), key, readLinks, cleanFiles(body.files), isGrade);
+    const text = isGrade ? enforceGrade(rawText, body) : rawText;
     res.status(200).json({ text, failed });
   } catch (e) {
     const busy = /429/.test(e.message);
