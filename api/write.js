@@ -32,9 +32,13 @@ function cleanFiles(list) {
 
 function buildPrompt(b) {
   const sample = clip(b.sample, 6000).trim();
+  const natural = b.voice === "natural";
+  const voiceRules = natural
+    ? `VOICE MODE: "Like me". Copy the writer's habits too, not just their words: slang, casual phrasing, sentence patterns (run-ons, short fragments, starting sentences with "And" or "So"), and any mistakes they make CONSISTENTLY, meaning the same misspelling, word mix-up or grammar slip showing up more than once (for example "alot", there/their, "could of", missing commas before "but"). Repeat those habits at about the same rate they appear in the sample. Do NOT invent new random mistakes they never made. If the sample has no punctuation at all, it is probably a voice transcript, so still end sentences with normal punctuation and capitals.`
+    : `VOICE MODE: "Polished". Sound like the writer, but with 100% correct spelling, grammar, punctuation and capitalization. Fix any mistakes or habits from the sample instead of copying them.`;
   const style = sample
-    ? `Here is a sample of the writer's own writing. Study their voice: sentence length, word choice, vocabulary level, punctuation habits, how they start and end paragraphs, and their tone. Write so it sounds like THEM, not like an AI. Do not copy sentences from the sample.\n\n<sample>\n${sample}\n</sample>\n\n`
-    : "Write in a natural, clear, human voice. Avoid cliches and filler.\n\n";
+    ? `Here is a sample of the writer's own writing. Study their voice: sentence length, word choice, vocabulary level, how they start and end paragraphs, and their tone. Write so it sounds like THEM, not like an AI. Do not copy sentences from the sample.\n${voiceRules}\n\n<sample>\n${sample}\n</sample>\n\n`
+    : "Write in a natural, clear, human voice with correct punctuation and grammar. Avoid cliches and filler.\n\n";
 
   const type = clip(b.type, 120) || "essay";
   const meta = `Type / format: ${type}. Target length: about ${Number(b.length) || 500} words. Tone: ${clip(b.tone, 60) || "match the sample"}.
@@ -51,7 +55,10 @@ If the format is a known writing structure (for example RACES = Restate the ques
     if (pasted) evidence += `<pasted_source>\n${pasted}\n</pasted_source>\n`;
     evidence += `Evidence rules: Use direct quotes copied EXACTLY word-for-word from the sources, in quotation marks, introduced naturally (e.g. According to [author or site], "..."). Add a short citation after each quote, like (Author or Site Name) or (Title, paragraph 3) when you can tell. Explain how each quote supports the point. NEVER invent a quote, statistic or source. If a source could not be read, rely only on the ones you could read.\n\n`;
   }
-  const rules = "Output plain text only: no markdown, no asterisks, no headings symbols. Separate paragraphs with a blank line. Do not add notes or explanations before or after.";
+  const grammar = natural && sample
+    ? "Punctuate sentences normally, but keep the writer's habits from the VOICE MODE rules."
+    : "Always use correct punctuation, capitalization and grammar: periods, commas, apostrophes, quotation marks and capital letters at the start of sentences.";
+  const rules = grammar + " Output plain text only: no markdown, no asterisks, no headings symbols. Separate paragraphs with a blank line. Do not add notes or explanations before or after.";
   const ctx = evidence;
 
   switch (b.action) {
@@ -59,6 +66,21 @@ If the format is a known writing structure (for example RACES = Restate the ques
       return `${style}${ctx}Make an outline for this piece.\n${meta}\nTopic / prompt: ${clip(b.prompt, 3000) || "(see the attached file for the assignment)"}\n\nGive a one-sentence thesis on the first line starting with "Thesis:", then a numbered list of sections, each with a short title and 2-3 bullet points (use "-" for bullets). Plain text only.`;
     case "expand":
       return `${style}${ctx}${meta}\nOverall topic: ${clip(b.prompt, 3000)}\nFull outline for context:\n${clip(b.context, 6000)}\n\nWrite ONLY the section below as finished paragraphs (about ${Math.max(80, Math.round((Number(b.length) || 500) / Math.max(1, Number(b.sections) || 4)))} words). ${rules}\n\nSection to write:\n${clip(b.paragraph, 2000)}`;
+    case "grade":
+      return `You are a fair but honest teacher grading a student's writing.\n${meta.replace(/Target length[^.]*\.\s*/, "")}\n${clip(b.rubric, 3000) ? "Assignment / rubric to grade against:\n" + clip(b.rubric, 3000) + "\n" : ""}${nFiles ? "Attached files may show the assignment, rubric or source text — use them.\n" : ""}${pasted ? "Source text the student was supposed to use:\n" + pasted + "\n" : ""}
+Grade the writing below. If a structure like RACES/CER/ACE was asked for, check every part is there. Check that quotes are real and explained.
+Reply with ONLY JSON in exactly this shape:
+{"score": 0-100, "letter": "A+ to F", "summary": "2 sentences, talk to the student directly",
+ "categories": [{"name": "Claim / thesis", "score": 0-10, "comment": "..."}, {"name": "Evidence", ...}, {"name": "Explanation", ...}, {"name": "Organization", ...}, {"name": "Grammar & spelling", ...}, {"name": "Voice & word choice", ...}],
+ "strengths": ["...", "..."],
+ "fixes": [{"quote": "exact short piece of their text", "problem": "...", "fix": "..."}]}
+Give 3-6 fixes, most important first.
+
+<writing>
+${clip(b.essay, 15000)}
+</writing>`;
+    case "revise":
+      return `${style}${ctx}${meta.replace(/Target length[^.]*\./, "Keep about the same length unless told otherwise.")}\nHere is a piece of writing and a teacher's feedback on it. Rewrite the WHOLE piece.\nWhat to do: ${clip(b.instruction, 500) || "fix everything in the feedback"}.\nKeep the writer's ideas and voice. Include the title on the first line. ${rules}\n\n<feedback>\n${clip(b.feedback, 5000)}\n</feedback>\n\n<writing>\n${clip(b.essay, 15000)}\n</writing>`;
     case "rewrite":
       return `${style}${ctx}Here is the surrounding text for context:\n${clip(b.context, 8000)}\n\nRewrite ONLY this paragraph. Instruction: ${clip(b.instruction, 300) || "improve it"}. Keep the writer's voice. Return just the new paragraph. ${rules}\n\nParagraph:\n${clip(b.paragraph, 3000)}`;
     default:
@@ -67,7 +89,7 @@ If the format is a known writing structure (for example RACES = Restate the ques
 }
 
 // readLinks = true turns on Gemini's URL Context tool: Google fetches the pages, not your Vercel site.
-async function callGemini(prompt, key, readLinks, files = []) {
+async function callGemini(prompt, key, readLinks, files = [], json = false) {
   let lastErr = "No model available";
   for (const model of MODELS) {
     const payload = {
@@ -75,7 +97,7 @@ async function callGemini(prompt, key, readLinks, files = []) {
         ...files.map((f) => ({ inline_data: { mime_type: f.mime, data: f.data } })),
         { text: prompt },
       ] }],
-      generationConfig: { temperature: readLinks ? 0.6 : 0.9, maxOutputTokens: 4096 },
+      generationConfig: { temperature: json ? 0.3 : readLinks ? 0.6 : 0.9, maxOutputTokens: 4096, ...(json ? { responseMimeType: "application/json" } : {}) },
     };
     if (readLinks) payload.tools = [{ url_context: {} }];
 
@@ -118,13 +140,14 @@ export default async function handler(req, res) {
   if (tooMany(ip)) return res.status(429).json({ error: "Slow down a little — try again in a minute." });
 
   const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
-  if (!clip(body.prompt, 10).trim() && body.action !== "rewrite" && !cleanFiles(body.files).length) {
+  if (!clip(body.prompt, 10).trim() && body.action !== "rewrite" && !cleanFiles(body.files).length && !["grade", "revise"].includes(body.action)) {
     return res.status(400).json({ error: "Add a prompt or upload your assignment first." });
   }
 
   try {
-    const readLinks = Array.isArray(body.links) && body.links.some((u) => /^https?:\/\//i.test(u));
-    const { text, failed } = await callGemini(buildPrompt(body), key, readLinks, cleanFiles(body.files));
+    const isGrade = body.action === "grade";
+    const readLinks = !isGrade && Array.isArray(body.links) && body.links.some((u) => /^https?:\/\//i.test(u));
+    const { text, failed } = await callGemini(buildPrompt(body), key, readLinks, cleanFiles(body.files), isGrade);
     res.status(200).json({ text, failed });
   } catch (e) {
     const busy = /429/.test(e.message);

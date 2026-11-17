@@ -61,6 +61,26 @@
   .chip .ico{width:34px;height:34px;display:grid;place-items:center;background:var(--line);border-radius:5px}
   .chip span{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .chip button{padding:0 6px;border:none;background:none;color:var(--muted)}
+  .tabs{margin-left:auto;display:flex;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:4px}
+  .tabs button{border:none;background:transparent;padding:7px 16px}
+  .tabs button.on{background:var(--accent);color:#1a1405;font-weight:600}
+  .grade{max-width:820px;margin:0 auto;font-family:var(--sans)}
+  .grade h3{font-family:var(--serif);font-size:24px;margin:0 0 6px}
+  .grade textarea{font-family:var(--serif);font-size:16px;line-height:1.6}
+  .score{display:flex;gap:22px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin:20px 0}
+  .ring{width:96px;height:96px;border-radius:50%;display:grid;place-items:center;flex:none}
+  .ring div{width:78px;height:78px;border-radius:50%;background:var(--panel);display:grid;place-items:center;text-align:center}
+  .ring b{font-size:24px;display:block;line-height:1}.ring small{color:var(--muted);font-size:12px}
+  .cat{display:grid;grid-template-columns:170px 1fr 44px;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .cat .meter{height:8px;background:var(--line);border-radius:5px;overflow:hidden}
+  .cat .meter i{display:block;height:100%;background:var(--accent);border-radius:5px}
+  .cat .c{grid-column:1/-1;color:var(--muted);font-size:13px;margin-top:-4px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:16px 0}
+  .card h4{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+  .card ul{margin:0;padding-left:18px}.card li{margin:6px 0}
+  .fix{padding:10px 0;border-bottom:1px solid var(--line)}.fix:last-child{border:none}
+  .fix q{font-family:var(--serif);color:var(--accent2)}
+  .fix div{font-size:14px;margin-top:4px}
   body.dragging aside{outline:2px dashed var(--accent);outline-offset:-6px}
 </style>
 </head>
@@ -68,6 +88,7 @@
 <header>
   <h1>Ink<span>well</span></h1>
   <p>Give it a sample of your writing, then a prompt. It drafts in your voice.</p>
+  <div class="tabs" id="tabs"><button data-tab="write" class="on">✍️ Write</button><button data-tab="grade">📝 Grade</button></div>
 </header>
 
 <main>
@@ -79,6 +100,11 @@
         <button class="mic" data-target="sample">🎤 Speak</button>
       </div>
       <div class="hint"><span id="sampleWords">0</span> words · 100+ words works best <span class="saved" id="savedNote"></span></div>
+      <div class="toggle" id="voice" style="margin-top:10px">
+        <button data-voice="polished" class="on">✨ Polished</button>
+        <button data-voice="natural">🗣️ Like me</button>
+      </div>
+      <div class="hint" id="voiceHint">Sounds like you, with 100% correct grammar and spelling.</div>
     </div>
 
     <div>
@@ -156,6 +182,22 @@
     <div class="status" id="status"></div>
   </aside>
 
+  <section class="out" id="gradeView" style="display:none">
+    <div class="grade">
+      <h3>Grade my writing</h3>
+      <div class="hint" style="margin:0 0 14px">Paste any essay or paragraph. It uses the Type box on the left (like "RACES paragraph"), plus any sources or photos you added there.</div>
+      <textarea id="essay" rows="12" placeholder="Paste your essay here…"></textarea>
+      <div class="hint"><span id="essayWords">0</span> words</div>
+      <label for="rubric" style="margin-top:14px">Assignment or rubric (optional)</label>
+      <textarea id="rubric" rows="3" placeholder="Paste the question, prompt or rubric — or upload a photo of it on the left"></textarea>
+      <div class="bar" style="margin:14px 0 0;max-width:none">
+        <button class="primary" id="gradeBtn">Grade it</button>
+        <span class="status" id="gStatus"></span>
+      </div>
+      <div id="gradeOut"></div>
+    </div>
+  </section>
+
   <section class="out" id="out">
     <div class="empty">Your draft shows up here. Hover any paragraph to rewrite it, make it longer or shorter — or just click and edit it yourself.</div>
   </section>
@@ -189,6 +231,84 @@ document.querySelectorAll("#mode button").forEach(b => b.onclick = () => {
   $("go").textContent = mode === "draft" ? "Write it" : "Make outline";
 });
 
+// ---------- Polished / Like me ----------
+let voice = store.get("inkwell.voice") || "polished";
+function setVoice(v){
+  voice = v; store.set("inkwell.voice", v);
+  document.querySelectorAll("#voice button").forEach(b => b.classList.toggle("on", b.dataset.voice === v));
+  $("voiceHint").textContent = v === "polished"
+    ? "Sounds like you, with 100% correct grammar and spelling."
+    : "Sounds exactly like you — keeps your slang and the mistakes you make over and over.";
+}
+document.querySelectorAll("#voice button").forEach(b => b.onclick = () => setVoice(b.dataset.voice));
+setVoice(voice);
+
+// ---------- Write / Grade tabs ----------
+function showTab(t){
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  $("out").style.display = t === "write" ? "" : "none";
+  $("gradeView").style.display = t === "grade" ? "" : "none";
+}
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+$("essay").addEventListener("input", () => $("essayWords").textContent = countWords($("essay").value));
+
+// ---------- grading ----------
+const esc = (t) => String(t ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+let lastGrade = null;
+function gStatus(msg, err){ $("gStatus").textContent = msg || ""; $("gStatus").className = "status" + (err ? " err" : ""); }
+
+$("gradeBtn").onclick = async () => {
+  const essay = $("essay").value.trim();
+  if (countWords(essay) < 20) return gStatus("Paste at least a few sentences to grade.", true);
+  $("gradeBtn").disabled = true; gStatus("Grading…");
+  try {
+    const raw = await ask({ ...common(), action:"grade", essay, rubric: $("rubric").value });
+    const g = JSON.parse(raw.replace(/^```(json)?|```$/g, "").trim());
+    lastGrade = g; drawGrade(g); gStatus("");
+  } catch(e){ gStatus(e instanceof SyntaxError ? "The grader got confused — try again." : e.message, true); }
+  $("gradeBtn").disabled = false;
+};
+
+function drawGrade(g){
+  const score = Math.max(0, Math.min(100, Number(g.score) || 0));
+  const color = score >= 85 ? "#6fcf8f" : score >= 70 ? "var(--accent)" : "var(--bad)";
+  const cats = (g.categories || []).map(c => {
+    const n = Math.max(0, Math.min(10, Number(c.score) || 0));
+    return `<div class="cat"><span>${esc(c.name)}</span><div class="meter"><i style="width:${n*10}%"></i></div><b>${n}/10</b><div class="c">${esc(c.comment)}</div></div>`;
+  }).join("");
+  const fixes = (g.fixes || []).map(f => `<div class="fix">${f.quote ? `<q>${esc(f.quote)}</q>` : ""}<div><b>Problem:</b> ${esc(f.problem)}</div><div><b>Fix:</b> ${esc(f.fix)}</div></div>`).join("");
+  $("gradeOut").innerHTML = `
+    <div class="score">
+      <div class="ring" style="background:conic-gradient(${color} ${score*3.6}deg, var(--line) 0)"><div><span><b>${score}</b><small>${esc(g.letter)}</small></span></div></div>
+      <div style="font-family:var(--serif);font-size:17px">${esc(g.summary)}</div>
+    </div>
+    <div class="card"><h4>Breakdown</h4>${cats}</div>
+    ${g.strengths?.length ? `<div class="card"><h4>What you did well</h4><ul>${g.strengths.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
+    ${fixes ? `<div class="card"><h4>What to fix</h4>${fixes}</div>` : ""}
+    <div class="card"><h4>Rewrite it</h4>
+      <div class="bar" style="margin:0 0 10px;max-width:none">
+        <button data-r="Fix everything in the feedback to raise the grade">Fix everything</button>
+        <button data-r="Only fix spelling, grammar and punctuation. Change nothing else">Grammar only</button>
+        <button data-r="Improve the evidence and explanation parts using the feedback">Better evidence</button>
+      </div>
+      <input id="rInstr" placeholder="Or tell it what to do, e.g. make the intro stronger and add a counterclaim" />
+      <div class="bar" style="margin:10px 0 0;max-width:none"><button class="primary" id="rGo">Rewrite with my instructions</button>
+      <span class="hint" style="margin:0">Uses your ✨ Polished / 🗣️ Like me setting.</span></div>
+    </div>`;
+  $("gradeOut").querySelectorAll("[data-r]").forEach(b => b.onclick = () => revise(b.dataset.r, b));
+  $("rGo").onclick = () => revise($("rInstr").value.trim() || "Fix everything in the feedback", $("rGo"));
+}
+
+async function revise(instruction, btn){
+  btn.disabled = true; const old = btn.textContent; btn.textContent = "Rewriting…";
+  try {
+    const feedback = lastGrade ? JSON.stringify({ summary:lastGrade.summary, categories:lastGrade.categories, fixes:lastGrade.fixes }) : "";
+    const text = await ask({ ...common(), action:"revise", essay: $("essay").value, feedback, instruction });
+    renderDoc(text); showTab("write"); setStatus("Rewritten! Hit “Grade this” to see the new score.");
+  } catch(e){ gStatus(e.message, true); }
+  btn.disabled = false; btn.textContent = old;
+}
+
 // ---------- voice input (Chrome / Edge) ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, recBtn = null;
@@ -215,7 +335,7 @@ document.querySelectorAll(".mic").forEach(btn => {
 function setStatus(msg, err){ $("status").textContent = msg || ""; $("status").className = "status" + (err ? " err" : ""); }
 function common(){
   const links = $("links").value.split(/\s+/).filter(u => /^https?:\/\//i.test(u)).slice(0, 5);
-  return { sample: $("sample").value, prompt: $("prompt").value, type: $("type").value || "Essay", length: $("length").value, tone: $("tone").value, links, sourceText: $("sourceText").value,
+  return { sample: $("sample").value, prompt: $("prompt").value, type: $("type").value || "Essay", length: $("length").value, tone: $("tone").value, voice, links, sourceText: $("sourceText").value,
            files: files.filter(f => f.data).map(f => ({ name: f.name, mime: f.mime, data: f.data })) };
 }
 
@@ -351,7 +471,9 @@ function toolbar(){
   const add = document.createElement("button"); add.textContent = "+ Paragraph";
   add.onclick = () => { const d = $("doc"); if (d){ const el = paraEl("Click to write…"); d.appendChild(el); el.querySelector("p").focus(); } };
   const count = document.createElement("span"); count.className = "count"; count.id = "count";
-  bar.append(copy, txt, docx, add, count); return bar;
+  const grade = document.createElement("button"); grade.textContent = "📝 Grade this";
+  grade.onclick = () => { $("essay").value = docText(); $("essay").dispatchEvent(new Event("input")); showTab("grade"); $("gradeBtn").click(); };
+  bar.append(copy, txt, docx, add, grade, count); return bar;
 }
 
 function docText(){
