@@ -1,6 +1,6 @@
 # Inkwell
 
-Paste or speak a sample of your writing, give it a prompt, and it drafts the piece in your voice. Free to run on Vercel + Gemini.
+Paste or speak a sample of your writing, give it a prompt, and it writes the piece in your words. Free to run on Vercel + Gemini.
 
 ## Setup (about 5 minutes, $0)
 
