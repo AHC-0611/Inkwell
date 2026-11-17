@@ -44,7 +44,7 @@
   main{display:grid;grid-template-columns:380px 1fr;gap:0;min-height:calc(100vh - 75px)}
   @media (max-width:900px){main{grid-template-columns:1fr}}
   aside{border-right:1px solid var(--line);padding:22px;display:flex;flex-direction:column;gap:18px;background:var(--panel)}
-  section.out{padding:28px 36px;overflow:auto}
+  section.out{padding:28px 36px;min-width:0}
   label{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);display:block;margin-bottom:6px}
   textarea,input,select{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:inherit;font-size:14px}
   textarea:focus,input:focus,select:focus{outline:none;border-color:var(--accent)}
@@ -77,6 +77,8 @@
   .outline{white-space:pre-wrap;font-family:var(--sans);font-size:15px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
   .bar{display:flex;gap:8px;flex-wrap:wrap;max-width:760px;margin:0 auto 22px;align-items:center}
   .bar .count{margin-left:auto;color:var(--muted);font-size:13px}
+  .bar.sticky{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 0;margin-top:-12px;border-bottom:1px solid var(--line)}
+  button.copied{background:#6fcf8f!important;border-color:#6fcf8f!important;color:#0d2416!important}
   .saved{font-size:12px;color:var(--accent)}
   .topicRow{margin-top:8px}
   .topicRow button{font-size:13px;padding:6px 11px}
@@ -250,7 +252,8 @@
       <h3>Grade my writing</h3>
       <div class="hint" style="margin:0 0 14px">Paste any essay or paragraph. It uses the Type box on the left (like "RACES paragraph"), plus any sources or photos you added there.</div>
       <textarea id="essay" rows="12" placeholder="Paste your essay here…"></textarea>
-      <div class="hint"><span id="essayWords">0</span> words</div>
+      <div class="bar" style="margin:6px 0 0;max-width:none"><span class="hint" style="margin:0"><span id="essayWords">0</span> words</span>
+        <button id="copyEssay" style="margin-left:auto;font-size:13px;padding:6px 12px">📋 Copy</button></div>
       <label for="rubric" style="margin-top:14px">Assignment or rubric (optional)</label>
       <textarea id="rubric" rows="3" placeholder="Paste the question, prompt or rubric — or upload a photo of it on the left"></textarea>
       <div class="row" style="margin-top:14px;max-width:360px" id="gradeAsBox">
@@ -349,6 +352,7 @@ function showTab(t){
   clearTip(); if (t === "grade") runTips("grade");
 }
 document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+$("copyEssay").onclick = () => copyText($("essay").value.trim(), $("copyEssay"), "📋 Copy");
 $("gradeAs").value = store.get("inkwell.gradeAs") || "7";
 $("gradeAs").onchange = () => store.set("inkwell.gradeAs", $("gradeAs").value);
 $("essay").addEventListener("input", () => $("essayWords").textContent = countWords($("essay").value));
@@ -445,9 +449,9 @@ async function revise(instruction, btn, rounds){
     $("gradeOut").insertAdjacentHTML("afterbegin", `<div class="card" style="border-color:var(--accent)">
       <b>${startScore} → ${esc(g.score)}</b> (${diff >= 0 ? "+" : ""}${diff})
       ${hit ? " — hit your goal! 🎉" : ` — didn't quite reach ${goal} yet. Try "Rewrite until it hits my goal" again or add an instruction.`}
-      <div class="bar" style="margin:10px 0 0;max-width:none"><button id="openEd">Open in editor</button><button id="copyNew">Copy</button></div></div>`);
+      <div class="bar" style="margin:10px 0 0;max-width:none"><button id="copyNew" class="primary">📋 Copy essay</button><button id="openEd">Open in editor</button></div></div>`);
     $("openEd").onclick = () => { renderDoc(essay); showTab("write"); };
-    $("copyNew").onclick = async () => { try { await navigator.clipboard.writeText(essay); $("copyNew").textContent = "Copied ✓"; } catch {} };
+    $("copyNew").onclick = () => copyText(essay, $("copyNew"), "📋 Copy essay");
     window.scrollTo({ top: $("gradeView").offsetTop, behavior: "smooth" });
   } catch(e){
     gStatus(e instanceof SyntaxError ? "The grader got confused — try again." : e.message, true);
@@ -670,8 +674,9 @@ async function rewrite(p, instruction, btn){
 
 function toolbar(){
   const bar = document.createElement("div"); bar.className = "bar";
-  const copy = document.createElement("button"); copy.textContent = "Copy";
-  copy.onclick = async () => { try{ await navigator.clipboard.writeText(docText()); copy.textContent = "Copied ✓"; setTimeout(()=>copy.textContent="Copy",1500);}catch{ setStatus("Couldn't copy — select the text and press Ctrl+C.", true);} };
+  const bar0 = bar; bar0.classList.add("sticky");
+  const copy = document.createElement("button"); copy.className = "primary"; copy.textContent = "📋 Copy essay";
+  copy.onclick = () => copyText(docText(), copy, "📋 Copy essay");
   const txt = document.createElement("button"); txt.textContent = "Download .txt"; txt.onclick = () => download("txt");
   const docx = document.createElement("button"); docx.textContent = "Download for Word"; docx.onclick = () => download("doc");
   const add = document.createElement("button"); add.textContent = "+ Paragraph";
@@ -686,6 +691,19 @@ function toolbar(){
   const lvlGroup = document.createElement("span"); lvlGroup.className = "lvlGroup"; lvlGroup.id = "lvlGroup";
   lvlGroup.append(down, lvl, up);
   bar.append(copy, txt, docx, add, grade, lvlGroup, count); return bar;
+}
+
+async function copyText(text, btn, label){
+  if (!text) return;
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; }
+  catch {
+    const t = document.createElement("textarea"); t.value = text; t.style.position = "fixed"; t.style.opacity = "0";
+    document.body.appendChild(t); t.select(); try { ok = document.execCommand("copy"); } catch {} t.remove();
+  }
+  if (!btn) return;
+  btn.textContent = ok ? "✓ Copied!" : "Select and press Ctrl+C"; btn.classList.toggle("copied", ok);
+  setTimeout(() => { btn.textContent = label; btn.classList.remove("copied"); }, 1600);
 }
 
 function docText(){
