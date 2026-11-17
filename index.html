@@ -180,6 +180,41 @@
   @keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
   @media (prefers-reduced-motion:reduce){.loader *,.para.working p{animation:none!important}}
   @keyframes pop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  /* ---------- phones & small tablets ---------- */
+  @media (max-width:700px){
+    header{flex-wrap:wrap;padding:12px 16px;gap:10px}
+    header > p{display:none}
+    header h1{font-size:24px}
+    .logo{width:32px;height:40px}
+    .help{margin-left:auto}
+    .tabs,.help + .tabs{order:3;width:100%;margin:0}
+    .tabs button{flex:1;padding:9px}
+    aside{border-right:none;border-bottom:1px solid var(--line);padding:18px 16px}
+    section.out{padding:18px 16px 40px}
+    textarea,input,select{font-size:16px}
+    .bar.sticky{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:-12px -16px 18px;padding:10px 16px;gap:6px}
+    .bar.sticky::-webkit-scrollbar{display:none}
+    .bar.sticky > *{flex:none}
+    .bar.sticky button{font-size:13px;padding:8px 11px;white-space:nowrap}
+    .lvlGroup button{white-space:nowrap}
+    .doc{font-size:17px}
+    .doc h2{font-size:24px}
+    .tools{flex-wrap:wrap}
+    .score{flex-direction:column;text-align:center;gap:14px;padding:18px}
+    .cat{grid-template-columns:1fr 70px 40px;gap:8px}
+    .grade .row,.card .row{flex-wrap:wrap}
+    .grade .row > *,.card .row > *{min-width:140px}
+    .card .bar button{font-size:13px}
+    .quota{padding:10px 16px;font-size:13px}
+    .empty{margin:30px auto;font-size:17px}
+    .loader{margin:30px auto}
+    .tip{max-width:calc(100vw - 24px)}
+    .chip span{max-width:110px}
+  }
+  @media (hover:none){
+    .para:hover{background:transparent}
+    .para:focus-within{background:var(--panel)}
+  }
   body.dragging aside{outline:2px dashed var(--accent);outline-offset:-6px}
 </style>
 </head>
@@ -384,14 +419,14 @@
       <div>
         <label for="tone">Tone</label>
         <select id="tone">
-          <option value="match the sample">Match my sample</option>
+          <option value="match the sample">Match sample</option>
           <option>casual</option><option>formal</option><option>funny</option><option>confident</option><option>simple and clear</option>
         </select>
       </div>
       <div id="levelBox">
         <label for="level">Grade level</label>
         <select id="level">
-          <option value="">Match my sample</option>
+          <option value="">Match sample</option>
           <option value="3">Grades 3–4</option>
           <option value="5">Grades 5–6</option>
           <option value="7">Grades 7–8</option>
@@ -418,13 +453,13 @@
   <section class="out" id="gradeView" style="display:none">
     <div class="grade">
       <h3>Grade my writing</h3>
-      <div class="hint" style="margin:0 0 14px">Paste any essay or paragraph. It uses the Type box on the left (like "RACES paragraph"), plus any sources or photos you added there.</div>
+      <div class="hint" style="margin:0 0 14px">Paste any essay or paragraph. It uses the Type box (like "RACES paragraph") plus any sources or photos you added in the settings.</div>
       <textarea id="essay" rows="12" placeholder="Paste your essay here…"></textarea>
       <div class="bar" style="margin:6px 0 0;max-width:none"><span class="hint" style="margin:0"><span id="essayWords">0</span> words</span>
         <button id="copyEssay" style="margin-left:auto;font-size:13px;padding:6px 12px">📋 Copy</button></div>
       <label for="rubric" style="margin-top:14px">Assignment or rubric (optional)</label>
-      <textarea id="rubric" rows="3" placeholder="Paste the question, prompt or rubric — or upload a photo of it on the left"></textarea>
-      <div class="row" style="margin-top:14px;max-width:360px" id="gradeAsBox">
+      <textarea id="rubric" rows="3" placeholder="Paste the question, prompt or rubric — or upload a photo of it in the settings"></textarea>
+      <div class="row" style="margin-top:14px;max-width:min(360px,100%)" id="gradeAsBox">
         <div>
           <label for="gradeAs">Grade it as</label>
           <select id="gradeAs"><option value="3">Grades 3–4</option><option value="5">Grades 5–6</option><option value="7" selected>Grades 7–8</option><option value="9">Grades 9–10</option><option value="11">Grades 11–12</option><option value="13">College</option></select>
@@ -517,7 +552,12 @@ function showTab(t){
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   $("out").style.display = t === "write" ? "" : "none";
   $("gradeView").style.display = t === "grade" ? "" : "none";
-  clearTip(); if (t === "grade") runTips("grade");
+  clearTip();
+  if (matchMedia("(max-width:900px)").matches) {
+    const target = t === "grade" ? $("gradeView") : ($("doc") ? $("out") : null);
+    if (target) requestAnimationFrame(() => window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - 8, behavior: "smooth" }));
+  }
+  if (t === "grade") setTimeout(() => runTips("grade"), 500);
 }
 document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
 $("copyEssay").onclick = () => copyText($("essay").value.trim(), $("copyEssay"), "📋 Copy");
