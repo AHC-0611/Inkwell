@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Inkwell — write in your own voice</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --text:#e8e6e1; --muted:#9aa0ab; --accent:#e8b04a; --accent2:#f3c873; --bad:#ef6b6b;
+    --serif: "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.5}
+  header{display:flex;align-items:baseline;gap:14px;padding:22px 28px;border-bottom:1px solid var(--line)}
+  header h1{font-family:var(--serif);font-weight:600;font-size:28px;margin:0;letter-spacing:.3px}
+  header h1 span{color:var(--accent)}
+  header p{margin:0;color:var(--muted);font-size:14px}
+  main{display:grid;grid-template-columns:380px 1fr;gap:0;min-height:calc(100vh - 75px)}
+  @media (max-width:900px){main{grid-template-columns:1fr}}
+  aside{border-right:1px solid var(--line);padding:22px;display:flex;flex-direction:column;gap:18px;background:var(--panel)}
+  section.out{padding:28px 36px;overflow:auto}
+  label{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);display:block;margin-bottom:6px}
+  textarea,input,select{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:inherit;font-size:14px}
+  textarea:focus,input:focus,select:focus{outline:none;border-color:var(--accent)}
+  textarea{resize:vertical}
+  .row{display:flex;gap:10px}
+  .row>*{flex:1}
+  .field{position:relative}
+  .mic{position:absolute;right:8px;bottom:8px;width:auto;padding:6px 10px;font-size:12px}
+  button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px 14px;font:inherit;font-size:14px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);color:#1a1405;border-color:var(--accent);font-weight:600}
+  button.primary:hover{background:var(--accent2)}
+  button:disabled{opacity:.5;cursor:wait}
+  button.rec{border-color:var(--bad);color:var(--bad)}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  .toggle{display:flex;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px}
+  .toggle button{flex:1;border:none;background:transparent;padding:7px}
+  .toggle button.on{background:var(--line)}
+  .status{font-size:13px;color:var(--muted);min-height:20px}
+  .status.err{color:var(--bad)}
+  .empty{color:var(--muted);max-width:520px;margin:80px auto;text-align:center;font-family:var(--serif);font-size:19px}
+  .doc{max-width:760px;margin:0 auto;font-family:var(--serif);font-size:18px}
+  .doc h2{font-size:28px;font-weight:600;margin:0 0 18px}
+  .para{position:relative;padding:6px 10px;margin:0 -10px 10px;border-radius:8px}
+  .para:hover{background:var(--panel)}
+  .para p{margin:0;white-space:pre-wrap;outline:none}
+  .tools{display:none;gap:6px;margin-top:8px;font-family:var(--sans)}
+  .para:hover .tools,.para:focus-within .tools{display:flex}
+  .tools button{font-size:12px;padding:4px 9px}
+  .outline{white-space:pre-wrap;font-family:var(--sans);font-size:15px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;max-width:760px;margin:0 auto 22px;align-items:center}
+  .bar .count{margin-left:auto;color:var(--muted);font-size:13px}
+  .saved{font-size:12px;color:var(--accent)}
+  .drop{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .chip{display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px 6px 4px 4px;font-size:12px;max-width:100%}
+  .chip img{width:34px;height:34px;object-fit:cover;border-radius:5px}
+  .chip .ico{width:34px;height:34px;display:grid;place-items:center;background:var(--line);border-radius:5px}
+  .chip span{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip button{padding:0 6px;border:none;background:none;color:var(--muted)}
+  body.dragging aside{outline:2px dashed var(--accent);outline-offset:-6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Ink<span>well</span></h1>
+  <p>Give it a sample of your writing, then a prompt. It drafts in your voice.</p>
+</header>
+
+<main>
+  <aside>
+    <div>
+      <label for="sample">1 · Your writing sample</label>
+      <div class="field">
+        <textarea id="sample" rows="7" placeholder="Paste a paragraph or two you wrote yourself, or tap Speak and talk naturally for 30 seconds."></textarea>
+        <button class="mic" data-target="sample">🎤 Speak</button>
+      </div>
+      <div class="hint"><span id="sampleWords">0</span> words · 100+ words works best <span class="saved" id="savedNote"></span></div>
+    </div>
+
+    <div>
+      <label for="prompt">2 · What should it write?</label>
+      <div class="field">
+        <textarea id="prompt" rows="4" placeholder="e.g. Why middle schools should start later in the morning — or leave blank and upload a photo of the assignment"></textarea>
+        <button class="mic" data-target="prompt">🎤 Speak</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="type">Type / format</label>
+        <input id="type" list="types" value="Essay" placeholder="Type anything, e.g. RACES paragraph" />
+        <datalist id="types">
+          <option>Essay</option>
+          <option>RACES paragraph</option>
+          <option>RACES response (multiple paragraphs)</option>
+          <option>CER paragraph (Claim, Evidence, Reasoning)</option>
+          <option>ACE paragraph</option>
+          <option>PEEL paragraph</option>
+          <option>Five-paragraph essay</option>
+          <option>Persuasive essay</option>
+          <option>Argumentative essay</option>
+          <option>Research paper</option>
+          <option>Narrative / story</option>
+          <option>Report</option>
+          <option>Compare &amp; contrast</option>
+          <option>Speech</option>
+          <option>YouTube script</option>
+        </datalist>
+      </div>
+      <div>
+        <label for="length">Words</label>
+        <select id="length">
+          <option>150</option><option>250</option><option selected>500</option><option>750</option><option>1000</option><option>1500</option>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label for="links">Sources &amp; files (optional)</label>
+      <textarea id="links" rows="2" placeholder="Paste up to 5 links, one per line"></textarea>
+      <div class="hint">It reads links, photos and PDFs — like an article, a screenshot, or a picture of your assignment — and quotes them as evidence.</div>
+      <div id="drop" class="drop">
+        <input type="file" id="fileIn" multiple accept="image/*,.pdf,.txt,.md" hidden />
+        <button type="button" id="pick">📎 Upload files / photos</button>
+        <span class="hint" style="margin:0">or paste (Ctrl+V) or drag them anywhere</span>
+      </div>
+      <div id="chips" class="chips"></div>
+      <details style="margin-top:8px">
+        <summary class="hint" style="cursor:pointer">Link won't load? Paste the text instead</summary>
+        <textarea id="sourceText" rows="4" style="margin-top:6px" placeholder="Paste the article or story text here (include the title and author if you have them)"></textarea>
+      </details>
+    </div>
+
+    <div>
+      <label for="tone">Tone</label>
+      <select id="tone">
+        <option value="match the sample">Match my sample</option>
+        <option>casual</option><option>formal</option><option>funny</option><option>confident</option><option>simple and clear</option>
+      </select>
+    </div>
+
+    <div>
+      <label>Mode</label>
+      <div class="toggle" id="mode">
+        <button data-mode="draft" class="on">Full draft</button>
+        <button data-mode="outline">Outline first</button>
+      </div>
+      <div class="hint" id="modeHint">Writes the whole piece at once.</div>
+    </div>
+
+    <button class="primary" id="go">Write it</button>
+    <div class="status" id="status"></div>
+  </aside>
+
+  <section class="out" id="out">
+    <div class="empty">Your draft shows up here. Hover any paragraph to rewrite it, make it longer or shorter — or just click and edit it yourself.</div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k){ try{ return localStorage.getItem(k) }catch{ return null } },
+  set(k,v){ try{ localStorage.setItem(k,v) }catch{} }
+};
+let mode = "draft";
+let lastOutline = "";
+
+// ---------- remember the writing sample ----------
+$("sample").value = store.get("inkwell.sample") || "";
+const countWords = (s) => (s.trim().match(/\S+/g) || []).length;
+function updateSample(){
+  $("sampleWords").textContent = countWords($("sample").value);
+  store.set("inkwell.sample", $("sample").value);
+  $("savedNote").textContent = $("sample").value.trim() ? "· saved on this device" : "";
+}
+$("sample").addEventListener("input", updateSample);
+updateSample();
+
+// ---------- mode toggle ----------
+document.querySelectorAll("#mode button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#mode button").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); mode = b.dataset.mode;
+  $("modeHint").textContent = mode === "draft" ? "Writes the whole piece at once." : "Makes a thesis + outline. You pick which sections to expand.";
+  $("go").textContent = mode === "draft" ? "Write it" : "Make outline";
+});
+
+// ---------- voice input (Chrome / Edge) ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recBtn = null;
+document.querySelectorAll(".mic").forEach(btn => {
+  if (!SR) { btn.title = "Voice works in Chrome or Edge"; }
+  btn.onclick = () => {
+    if (!SR) return setStatus("Voice input works in Chrome or Edge.", true);
+    if (rec) { rec.stop(); return; }
+    const box = $(btn.dataset.target);
+    const start = box.value ? box.value.trimEnd() + " " : "";
+    rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = "en-US";
+    recBtn = btn; btn.classList.add("rec"); btn.textContent = "■ Stop";
+    rec.onresult = (e) => {
+      let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      box.value = start + t; box.dispatchEvent(new Event("input"));
+    };
+    rec.onend = () => { btn.classList.remove("rec"); btn.textContent = "🎤 Speak"; rec = null; };
+    rec.onerror = (e) => setStatus("Mic error: " + e.error, true);
+    rec.start();
+  };
+});
+
+// ---------- talking to the server ----------
+function setStatus(msg, err){ $("status").textContent = msg || ""; $("status").className = "status" + (err ? " err" : ""); }
+function common(){
+  const links = $("links").value.split(/\s+/).filter(u => /^https?:\/\//i.test(u)).slice(0, 5);
+  return { sample: $("sample").value, prompt: $("prompt").value, type: $("type").value || "Essay", length: $("length").value, tone: $("tone").value, links, sourceText: $("sourceText").value,
+           files: files.filter(f => f.data).map(f => ({ name: f.name, mime: f.mime, data: f.data })) };
+}
+
+// ---------- files & photos (upload, paste, drag) ----------
+// Images are shrunk in the browser so everything fits under Vercel's 4.5 MB request limit.
+let files = [];
+const MAX_FILES = 6, MAX_TOTAL = 3.8 * 1024 * 1024;
+const totalSize = () => files.reduce((n, f) => n + (f.data ? f.data.length * 0.75 : 0), 0);
+
+function readAs(file, how){
+  return new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = bad; r[how](file); });
+}
+async function shrinkImage(file){
+  const url = await readAs(file, "readAsDataURL");
+  const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = url; });
+  const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+  const c = document.createElement("canvas"); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+  const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+  const out = c.toDataURL("image/jpeg", 0.82);
+  return { mime: "image/jpeg", data: out.split(",")[1], preview: out };
+}
+async function addFiles(list){
+  for (const file of list){
+    if (files.length >= MAX_FILES){ setStatus(`Up to ${MAX_FILES} files at a time.`, true); break; }
+    const name = file.name || "pasted-image.png";
+    try {
+      let entry;
+      if (file.type.startsWith("image/")) entry = { name, ...(await shrinkImage(file)) };
+      else if (file.type === "application/pdf" || /\.pdf$/i.test(name)) {
+        const d = await readAs(file, "readAsDataURL"); entry = { name, mime: "application/pdf", data: d.split(",")[1] };
+      } else if (/^text\//.test(file.type) || /\.(txt|md)$/i.test(name)) {
+        const t = await readAs(file, "readAsText");
+        $("sourceText").value += ($("sourceText").value ? "\n\n" : "") + `[${name}]\n` + t;
+        $("sourceText").closest("details").open = true; setStatus(`Added ${name} to the source text.`); continue;
+      } else { setStatus(`${name}: use a photo, PDF or .txt file. For Word docs, save as PDF first.`, true); continue; }
+      if (totalSize() + entry.data.length * 0.75 > MAX_TOTAL){ setStatus(`${name} is too big — files must add up to under about 3.5 MB.`, true); continue; }
+      files.push(entry); setStatus("");
+    } catch { setStatus(`Couldn't read ${name}.`, true); }
+  }
+  drawChips();
+}
+function drawChips(){
+  const box = $("chips"); box.innerHTML = "";
+  files.forEach((f, i) => {
+    const chip = document.createElement("div"); chip.className = "chip";
+    chip.innerHTML = f.preview ? `<img src="${f.preview}" alt="">` : `<div class="ico">📄</div>`;
+    const n = document.createElement("span"); n.textContent = f.name; n.title = f.name;
+    const x = document.createElement("button"); x.textContent = "✕"; x.title = "Remove"; x.onclick = () => { files.splice(i, 1); drawChips(); };
+    chip.append(n, x); box.appendChild(chip);
+  });
+}
+$("pick").onclick = () => $("fileIn").click();
+$("fileIn").onchange = (e) => { addFiles([...e.target.files]); e.target.value = ""; };
+// Paste images/files into ANY box (or anywhere on the page). Plain text pastes normally.
+document.addEventListener("paste", (e) => {
+  const items = [...(e.clipboardData?.files || [])];
+  if (items.length){ e.preventDefault(); addFiles(items); }
+});
+let dragDepth = 0;
+document.addEventListener("dragenter", (e) => { if (e.dataTransfer?.types?.includes("Files")) { dragDepth++; document.body.classList.add("dragging"); } });
+document.addEventListener("dragleave", () => { if (--dragDepth <= 0){ dragDepth = 0; document.body.classList.remove("dragging"); } });
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => {
+  e.preventDefault(); dragDepth = 0; document.body.classList.remove("dragging");
+  if (e.dataTransfer?.files?.length) addFiles([...e.dataTransfer.files]);
+});
+async function ask(payload){
+  const r = await fetch("/api/write", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || "Something went wrong.");
+  if (data.failed && data.failed.length) {
+    setTimeout(() => setStatus("Couldn't open: " + data.failed.join(", ") + " — paste that page's text in the box instead.", true), 50);
+  }
+  return data.text;
+}
+
+$("go").onclick = async () => {
+  if (!$("prompt").value.trim() && !files.length) return setStatus("Type or say a prompt, or upload a photo of the assignment.", true);
+  $("go").disabled = true; setStatus(mode === "draft" ? "Writing…" : "Outlining…");
+  try {
+    const text = await ask({ ...common(), action: mode });
+    mode === "draft" ? renderDoc(text) : renderOutline(text);
+    setStatus("");
+  } catch(e){ setStatus(e.message, true); }
+  $("go").disabled = false;
+};
+
+// ---------- rendering the draft ----------
+function splitParas(text){ return text.replace(/\r/g,"").split(/\n\s*\n/).map(s => s.trim()).filter(Boolean); }
+
+function renderDoc(text, keepTitle){
+  const parts = splitParas(text);
+  let title = keepTitle ?? "";
+  if (!keepTitle && parts.length > 1 && parts[0].length < 120 && !/[.!?]$/.test(parts[0])) title = parts.shift();
+  const out = $("out"); out.innerHTML = "";
+  out.appendChild(toolbar());
+  const doc = document.createElement("div"); doc.className = "doc"; doc.id = "doc";
+  if (title){ const h = document.createElement("h2"); h.contentEditable = true; h.textContent = title; doc.appendChild(h); }
+  parts.forEach(p => doc.appendChild(paraEl(p)));
+  out.appendChild(doc); updateCount();
+}
+
+function paraEl(text){
+  const wrap = document.createElement("div"); wrap.className = "para";
+  const p = document.createElement("p"); p.contentEditable = true; p.textContent = text;
+  p.addEventListener("input", updateCount);
+  const tools = document.createElement("div"); tools.className = "tools";
+  [["Rewrite","rewrite it a different way"],["Better evidence","use a stronger, more relevant quote from the sources and explain it better"],["Longer","make it longer with more detail and examples"],["Shorter","make it shorter and tighter"],["Simpler","use simpler words"],["Stronger","make the argument stronger and more convincing"]]
+    .forEach(([label, instr]) => {
+      const b = document.createElement("button"); b.textContent = label;
+      b.onclick = () => rewrite(p, instr, b); tools.appendChild(b);
+    });
+  const del = document.createElement("button"); del.textContent = "Delete"; del.onclick = () => { wrap.remove(); updateCount(); };
+  tools.appendChild(del);
+  wrap.append(p, tools); return wrap;
+}
+
+async function rewrite(p, instruction, btn){
+  btn.disabled = true; const old = btn.textContent; btn.textContent = "…";
+  try {
+    const text = await ask({ ...common(), action:"rewrite", paragraph: p.textContent, instruction, context: docText() });
+    p.textContent = splitParas(text).join("\n\n"); updateCount();
+  } catch(e){ setStatus(e.message, true); }
+  btn.disabled = false; btn.textContent = old;
+}
+
+function toolbar(){
+  const bar = document.createElement("div"); bar.className = "bar";
+  const copy = document.createElement("button"); copy.textContent = "Copy";
+  copy.onclick = async () => { try{ await navigator.clipboard.writeText(docText()); copy.textContent = "Copied ✓"; setTimeout(()=>copy.textContent="Copy",1500);}catch{ setStatus("Couldn't copy — select the text and press Ctrl+C.", true);} };
+  const txt = document.createElement("button"); txt.textContent = "Download .txt"; txt.onclick = () => download("txt");
+  const docx = document.createElement("button"); docx.textContent = "Download for Word"; docx.onclick = () => download("doc");
+  const add = document.createElement("button"); add.textContent = "+ Paragraph";
+  add.onclick = () => { const d = $("doc"); if (d){ const el = paraEl("Click to write…"); d.appendChild(el); el.querySelector("p").focus(); } };
+  const count = document.createElement("span"); count.className = "count"; count.id = "count";
+  bar.append(copy, txt, docx, add, count); return bar;
+}
+
+function docText(){
+  const d = $("doc"); if (!d) return "";
+  return [...d.querySelectorAll("h2, .para p")].map(e => e.textContent.trim()).filter(Boolean).join("\n\n");
+}
+function updateCount(){ const c = $("count"); if (c) c.textContent = countWords(docText().replace(/^.*\n\n/,"")) + " words"; }
+
+function download(kind){
+  const text = docText(); if (!text) return;
+  const name = (($("doc").querySelector("h2")?.textContent) || "draft").replace(/[^\w\- ]+/g,"").trim().slice(0,60) || "draft";
+  let blob;
+  if (kind === "txt") blob = new Blob([text], { type:"text/plain" });
+  else {
+    const esc = (s) => s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    const [first, ...rest] = text.split("\n\n");
+    const html = `<html><head><meta charset="utf-8"></head><body style="font-family:Times New Roman;font-size:12pt;line-height:2"><h1 style="font-size:16pt;text-align:center">${esc(first)}</h1>${rest.map(p=>`<p>${esc(p)}</p>`).join("")}</body></html>`;
+    blob = new Blob([html], { type:"application/msword" });
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = name + (kind === "txt" ? ".txt" : ".doc"); a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// ---------- outline mode ----------
+function renderOutline(text){
+  lastOutline = text;
+  const lines = text.split("\n");
+  const sections = []; let cur = null;
+  lines.forEach(l => {
+    if (/^\s*\d+[\.\)]/.test(l)) { cur = { title: l.trim(), lines:[l] }; sections.push(cur); }
+    else if (cur) cur.lines.push(l);
+  });
+  const out = $("out"); out.innerHTML = "";
+  const wrap = document.createElement("div"); wrap.className = "doc";
+  const head = document.createElement("div"); head.className = "outline"; head.contentEditable = true; head.textContent = text;
+  head.addEventListener("input", () => lastOutline = head.textContent);
+  const bar = document.createElement("div"); bar.className = "bar"; bar.style.marginTop = "16px";
+  const all = document.createElement("button"); all.className = "primary"; all.textContent = "Write all sections";
+  all.onclick = () => expandAll(sections, all);
+  const note = document.createElement("span"); note.className = "count"; note.textContent = "You can edit the outline before writing.";
+  bar.append(all, note);
+  wrap.append(head, bar); out.appendChild(wrap);
+}
+
+async function expandAll(sections, btn){
+  if (!sections.length) sections = [{ lines:[lastOutline] }];
+  btn.disabled = true;
+  const thesis = (lastOutline.match(/Thesis:\s*(.*)/i) || [,""])[1];
+  const pieces = [];
+  try {
+    for (let i = 0; i < sections.length; i++){
+      setStatus(`Writing section ${i+1} of ${sections.length}…`);
+      const t = await ask({ ...common(), action:"expand", paragraph: sections[i].lines.join("\n"), context: lastOutline, sections: sections.length });
+      pieces.push(t);
+    }
+    renderDoc(pieces.join("\n\n"), thesis ? $("prompt").value.trim().slice(0,90) : "");
+    setStatus("");
+  } catch(e){ setStatus(e.message, true); btn.disabled = false; }
+}
+</script>
+</body>
+</html>

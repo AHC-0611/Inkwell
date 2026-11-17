@@ -1,0 +1,8 @@
+{
+  "name": "inkwell",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Write essays and papers in your own voice from a prompt, powered by Gemini.",
+  "type": "module",
+  "engines": { "node": ">=18" }
+}
