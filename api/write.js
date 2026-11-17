@@ -158,7 +158,7 @@ ${clip(b.essay, 15000)}
 
 // readLinks = true turns on Gemini's URL Context tool: Google fetches the pages, not your Vercel site.
 async function callGemini(prompt, key, readLinks, files = [], json = false) {
-  let lastErr = "No model available";
+  let lastErr = "No model available", quota = null, retryAfter = 0, overloaded = false;
   for (const model of MODELS) {
     const payload = {
       contents: [{ role: "user", parts: [
@@ -188,10 +188,24 @@ async function callGemini(prompt, key, readLinks, files = [], json = false) {
       lastErr = "Empty response";
       continue;
     }
-    lastErr = `${model}: ${r.status}`;
+    let info = {};
+    try { info = (await r.json()).error || {}; } catch {}
+    const details = JSON.stringify(info.details || []) + " " + (info.message || "");
+    lastErr = `${model}: ${r.status} ${info.status || ""}`.trim();
+    if (r.status === 429) {
+      const perDay = /PerDay|per day|daily/i.test(details);
+      const retry = (details.match(/"retryDelay":"(\d+)/) || [])[1];
+      quota = perDay ? "day" : (quota === "day" ? "day" : "minute");
+      if (retry) retryAfter = Math.max(retryAfter, Number(retry));
+    }
+    if (r.status === 400 && /API_KEY_INVALID|API key not valid/i.test(details)) throw Object.assign(new Error("bad key"), { code: "bad_key" });
+    if (r.status === 403) throw Object.assign(new Error("forbidden"), { code: "bad_key" });
+    if (r.status === 503) overloaded = true;
     // 400 with links = this model can't read links -> try next. 404 = model not found, 429/503 = busy.
     if (![400, 404, 429, 503].includes(r.status) || (r.status === 400 && !readLinks)) break;
   }
+  if (quota) throw Object.assign(new Error(lastErr), { code: quota === "day" ? "quota_day" : "quota_minute", retryAfter });
+  if (overloaded) throw Object.assign(new Error(lastErr), { code: "overloaded" });
   throw new Error(lastErr);
 }
 
@@ -220,9 +234,17 @@ export default async function handler(req, res) {
     const text = isGrade ? enforceGrade(rawText, body) : rawText;
     res.status(200).json({ text, failed });
   } catch (e) {
-    const busy = /429/.test(e.message);
-    res.status(busy ? 429 : 502).json({
-      error: busy ? "The free daily limit was reached. It resets at midnight Pacific time." : "The AI didn't respond. Try again.",
+    const msgs = {
+      quota_day: "You've used up today's free AI credits. They reset at midnight Pacific time (3 AM Eastern).",
+      quota_minute: `Too many AI requests this minute. Wait ${e.retryAfter || 30} seconds and try again.`,
+      bad_key: "The Gemini API key isn't working. Check GEMINI_API_KEY in Vercel → Settings → Environment Variables.",
+      overloaded: "Gemini is overloaded right now. Try again in a minute.",
+    };
+    const status = e.code === "quota_day" || e.code === "quota_minute" ? 429 : e.code === "bad_key" ? 500 : 502;
+    res.status(status).json({
+      error: msgs[e.code] || "The AI didn't respond. Try again.",
+      code: e.code || "unknown",
+      retryAfter: e.retryAfter || 0,
       detail: e.message,
     });
   }
