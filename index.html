@@ -117,7 +117,8 @@
   .uses.low b{color:var(--bad)}
   .quota{display:flex;align-items:center;gap:12px;padding:12px 28px;background:rgba(239,107,107,.1);border-bottom:1px solid rgba(239,107,107,.4);font-size:14px}
   .quota b{color:var(--bad)}
-  .quota button{margin-left:auto;border:none;background:none;color:var(--muted)}
+  .quota button{margin-left:auto;border:none;background:none;color:var(--muted);font-size:18px;width:40px;height:40px;flex:none;border-radius:50%;position:relative;z-index:2}
+  .quota button:hover{background:rgba(255,255,255,.06);color:var(--text)}
   .topicRow{margin-top:8px}
   .topicRow button{font-size:13px;padding:6px 11px}
   .topic{margin-top:8px;background:var(--panel2);border:1px dashed var(--accent);border-radius:8px;padding:10px 12px;font-size:14px;font-family:var(--serif)}
@@ -835,6 +836,8 @@ async function ask(payload){
   const r = await fetch("/api/write", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
   const data = await r.json().catch(() => ({}));
   if (typeof data.remaining === "number") showUses(data.remaining, data.limit);
+  if (r.ok && !$("quota").hidden) hideQuotaBanner(true);
+  if (r.ok) { try { localStorage.removeItem("inkwell.quotaUntil"); } catch {} }
   if (!r.ok) {
     if (data.code === "quota_day") showQuotaBanner();
     throw Object.assign(new Error(data.error || "Something went wrong."), { code: data.code });
@@ -907,18 +910,32 @@ function msUntilPacificMidnight(){
   return next - la;
 }
 let quotaTimer = null;
-function showQuotaBanner(){
+function showQuotaBanner(fromLoad){
   const box = $("quota"); box.hidden = false;
   const tick = () => {
     const ms = msUntilPacificMidnight(), h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000);
     $("quotaLeft").textContent = h ? `${h}h ${m}m` : `${m} minutes`;
   };
   tick(); clearInterval(quotaTimer); quotaTimer = setInterval(tick, 30000);
-  store.set("inkwell.quotaUntil", String(Date.now() + msUntilPacificMidnight()));
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (!fromLoad) {
+    store.set("inkwell.quotaUntil", String(Date.now() + msUntilPacificMidnight()));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 }
-$("quotaX").onclick = () => { $("quota").hidden = true; clearInterval(quotaTimer); };
-if (Number(store.get("inkwell.quotaUntil") || 0) > Date.now()) showQuotaBanner();
+function hideQuotaBanner(forget){
+  $("quota").hidden = true; clearInterval(quotaTimer);
+  if (forget) { try { localStorage.removeItem("inkwell.quotaUntil"); localStorage.removeItem("inkwell.quotaClosed"); } catch {} }
+}
+$("quotaX").addEventListener("click", (e) => {
+  e.preventDefault(); e.stopPropagation();
+  hideQuotaBanner(false);
+  store.set("inkwell.quotaClosed", store.get("inkwell.quotaUntil") || "1");   // stay closed until it resets
+});
+{
+  const until = Number(store.get("inkwell.quotaUntil") || 0);
+  if (until > Date.now() && store.get("inkwell.quotaClosed") !== String(until)) showQuotaBanner(true);
+  else if (until && until <= Date.now()) hideQuotaBanner(true);
+}
 
 // ---------- jump to new results ----------
 function jumpTo(el, flashEl){
