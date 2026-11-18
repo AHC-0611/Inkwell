@@ -213,10 +213,57 @@ async function callGemini(prompt, key, readLinks, files = [], json = false) {
   throw new Error(lastErr);
 }
 
+// ---------- daily limit per person ----------
+// Counted with a signed cookie (no setup needed). If you connect Upstash Redis in Vercel,
+// it ALSO counts per IP address, which is harder to get around.
+import crypto from "node:crypto";
+const DAILY = Number(process.env.DAILY_LIMIT) || 25;
+const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+const secret = () => process.env.LIMIT_SECRET || crypto.createHash("sha256").update("inkwell:" + (process.env.GEMINI_API_KEY || "")).digest("hex");
+const sign = (v) => crypto.createHmac("sha256", secret()).update(v).digest("base64url").slice(0, 22);
+
+function cookieCount(req) {
+  const m = String(req.headers.cookie || "").match(/(?:^|;\s*)ink_uses=([^;]+)/);
+  if (!m) return 0;
+  const [day, n, sig] = decodeURIComponent(m[1]).split(".");
+  if (day !== today() || !sig || sign(`${day}.${n}`) !== sig) return 0;
+  return Math.max(0, Number(n) || 0);
+}
+function setCookieCount(res, n) {
+  const v = `${today()}.${n}`;
+  res.setHeader("Set-Cookie", `ink_uses=${encodeURIComponent(v + "." + sign(v))}; Path=/; Max-Age=172800; SameSite=Lax; Secure; HttpOnly`);
+}
+
+const REDIS_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+async function redis(cmds) {
+  if (!REDIS_URL || !REDIS_TOKEN) return null;
+  try {
+    const r = await fetch(`${REDIS_URL}/pipeline`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify(cmds) });
+    return r.ok ? await r.json() : null;
+  } catch { return null; }
+}
+const ipKey = (ip) => `ink:${today()}:${crypto.createHash("sha256").update(ip).digest("hex").slice(0, 16)}`;
+async function usedToday(req, ip) {
+  const c = cookieCount(req);
+  const r = await redis([["GET", ipKey(ip)]]);
+  return Math.max(c, Number(r?.[0]?.result) || 0);
+}
+async function addUse(req, res, ip, used) {
+  setCookieCount(res, used + 1);
+  await redis([["INCR", ipKey(ip)], ["EXPIRE", ipKey(ip), "90000"]]);
+  return Math.max(0, DAILY - used - 1);
+}
+
 // Allow bigger request bodies for photos/PDFs (Vercel's hard max is 4.5 MB).
 export const config = { api: { bodyParser: { sizeLimit: "4.5mb" } } };
 
 export default async function handler(req, res) {
+  const ip0 = (req.headers["x-forwarded-for"] || "").split(",")[0] || "unknown";
+  if (req.method === "GET") {
+    const used = await usedToday(req, ip0);
+    return res.status(200).json({ remaining: Math.max(0, DAILY - used), limit: DAILY });
+  }
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
   const key = process.env.GEMINI_API_KEY;
@@ -224,6 +271,14 @@ export default async function handler(req, res) {
 
   const ip = (req.headers["x-forwarded-for"] || "").split(",")[0] || "unknown";
   if (tooMany(ip)) return res.status(429).json({ error: "Slow down a little — try again in a minute." });
+
+  const used = await usedToday(req, ip);
+  if (used >= DAILY) {
+    return res.status(429).json({
+      error: `You've used all ${DAILY} of your free AI requests for today. They reset at midnight Pacific time (3 AM Eastern).`,
+      code: "daily_user_limit", remaining: 0, limit: DAILY,
+    });
+  }
 
   const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
   if (!clip(body.prompt, 10).trim() && body.action !== "rewrite" && !cleanFiles(body.files).length && !["grade", "revise", "level"].includes(body.action)) {
@@ -236,7 +291,8 @@ export default async function handler(req, res) {
     if (isGrade) body.wordGuide = `about ${minWords(body.type, body.gradeAs)}+ words for a ${gradeLabel(body.gradeAs)} ${body.type || "essay"}`;
     const { text: rawText, failed } = await callGemini(buildPrompt(body), key, readLinks, cleanFiles(body.files), isGrade);
     const text = isGrade ? enforceGrade(rawText, body) : rawText;
-    res.status(200).json({ text, failed });
+    const remaining = await addUse(req, res, ip, used);
+    res.status(200).json({ text, failed, remaining, limit: DAILY });
   } catch (e) {
     const msgs = {
       quota_day: "You've used up today's free AI credits. They reset at midnight Pacific time (3 AM Eastern).",

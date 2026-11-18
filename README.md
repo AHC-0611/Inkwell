@@ -27,6 +27,14 @@ Type any format in the Type box — e.g. "RACES paragraph", "CER", "ACE", "PEEL"
 - Free daily limits reset at midnight Pacific time.
 - Optional: set `GEMINI_MODEL` in Vercel to force a specific model.
 
+## Daily limit per person
+
+Each visitor gets **25 AI requests a day** (a draft, a grade or a rewrite = 1; failed requests don't count). It resets at midnight Pacific.
+
+- Change it: add `DAILY_LIMIT` in Vercel → Settings → Environment Variables (for example `40`), then redeploy.
+- By default it's counted with a signed cookie in the visitor's browser (no setup). Clearing cookies or using another browser resets it.
+- Want it stricter? In Vercel → Storage, connect a free **Upstash Redis** database to this project. The site detects it automatically and also counts per internet connection.
+
 ## Files
 
 - `index.html` – the whole site (voice input works in Chrome/Edge)

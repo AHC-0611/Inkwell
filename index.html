@@ -112,6 +112,9 @@
   .bar.sticky{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 0;margin-top:-12px;border-bottom:1px solid var(--line)}
   button.copied{background:#6fcf8f!important;border-color:#6fcf8f!important;color:#0d2416!important}
   .saved{font-size:12px;color:var(--accent)}
+  .uses{font-size:12px;color:var(--muted);text-align:center;margin-top:-8px}
+  .uses b{color:var(--accent2);font-weight:600}
+  .uses.low b{color:var(--bad)}
   .quota{display:flex;align-items:center;gap:12px;padding:12px 28px;background:rgba(239,107,107,.1);border-bottom:1px solid rgba(239,107,107,.4);font-size:14px}
   .quota b{color:var(--bad)}
   .quota button{margin-left:auto;border:none;background:none;color:var(--muted)}
@@ -448,6 +451,7 @@
     </div>
 
     <button class="primary" id="go">Write it</button>
+    <div class="uses" id="usesLeft" hidden></div>
     <div class="status" id="status"></div>
   </aside>
 
@@ -469,6 +473,7 @@
       <div class="hint">A 7th-grade essay gets graded like a 7th-grade teacher would, not a college professor.</div>
       <div class="bar" style="margin:14px 0 0;max-width:none">
         <button class="primary" id="gradeBtn">Grade it</button>
+        <span class="uses" id="usesLeft2" hidden style="margin:0"></span>
         <span class="status" id="gStatus"></span>
       </div>
       <div id="gradeOut"></div>
@@ -829,6 +834,7 @@ document.addEventListener("drop", (e) => {
 async function ask(payload){
   const r = await fetch("/api/write", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
   const data = await r.json().catch(() => ({}));
+  if (typeof data.remaining === "number") showUses(data.remaining, data.limit);
   if (!r.ok) {
     if (data.code === "quota_day") showQuotaBanner();
     throw Object.assign(new Error(data.error || "Something went wrong."), { code: data.code });
@@ -880,6 +886,18 @@ function showLoader(container, kind, sub){
     done(restore){ clearInterval(t); el.remove(); if (restore) kids.forEach(k => k.style.display = ""); }
   };
 }
+
+// ---------- requests left today (per person) ----------
+function showUses(left, limit){
+  ["usesLeft", "usesLeft2"].forEach(id => {
+    const el = $(id); if (!el) return;
+    el.hidden = false; el.classList.toggle("low", left <= 5);
+    el.innerHTML = left > 0
+      ? `<b>${left}</b> of ${limit || 25} AI requests left today`
+      : `<b>0</b> requests left today · resets at midnight Pacific`;
+  });
+}
+fetch("/api/write").then(r => r.ok ? r.json() : null).then(d => { if (d && typeof d.remaining === "number") showUses(d.remaining, d.limit); }).catch(() => {});
 
 // ---------- out of daily credits ----------
 function msUntilPacificMidnight(){
