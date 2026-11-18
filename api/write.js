@@ -3,15 +3,19 @@
 
 const MODELS = [
   process.env.GEMINI_MODEL,          // optional override
+  // Each model has its OWN free daily allowance, so trying several = a bigger total pool.
+  // Names that don't exist on your account are skipped automatically (404).
   "gemini-flash-lite-latest",        // highest free-tier limits
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
   "gemini-2.5-flash-lite",
-  "gemini-flash-latest",             // fallback if lite is busy
+  "gemini-flash-latest",             // smaller allowance, used last
   "gemini-2.5-flash",
 ].filter(Boolean);
 
 // Simple per-visitor limit so one person can't burn your whole daily quota.
 const hits = new Map();
-const LIMIT_PER_MIN = 14;
+const LIMIT_PER_MIN = 20;
 
 function tooMany(ip) {
   const now = Date.now();
