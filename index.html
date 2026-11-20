@@ -112,6 +112,8 @@
   .bar.sticky{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 0;margin-top:-12px;border-bottom:1px solid var(--line)}
   button.copied{background:#6fcf8f!important;border-color:#6fcf8f!important;color:#0d2416!important}
   .saved{font-size:12px;color:var(--accent)}
+  .endBar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:760px;margin:28px auto 10px;padding-top:20px;border-top:1px solid var(--line)}
+  .endBar button.primary{padding:11px 20px;font-size:15px}
   .uses{font-size:12px;color:var(--muted);text-align:center;margin-top:-8px}
   .uses b{color:var(--accent2);font-weight:600}
   .uses.low b{color:var(--bad)}
@@ -669,9 +671,9 @@ async function revise(instruction, btn, rounds){
     $("gradeOut").insertAdjacentHTML("afterbegin", `<div class="card" style="border-color:var(--accent)">
       <b>${startScore} → ${esc(g.score)}</b> (${diff >= 0 ? "+" : ""}${diff})
       ${hit ? " — hit your goal! 🎉" : ` — didn't quite reach ${goal} yet. Try "Rewrite until it hits my goal" again or add an instruction.`}
-      <div class="bar" style="margin:10px 0 0;max-width:none"><button id="copyNew" class="primary">📋 Copy essay</button><button id="openEd">Open in editor</button></div></div>`);
+      <div class="bar" style="margin:10px 0 0;max-width:none"><button id="copyNew" class="primary">📋 Copy whole essay</button><button id="openEd">Open in editor</button></div></div>`);
     $("openEd").onclick = () => { renderDoc(essay); showTab("write"); };
-    $("copyNew").onclick = () => copyText(essay, $("copyNew"), "📋 Copy essay");
+    $("copyNew").onclick = () => copyText(essay, $("copyNew"), "📋 Copy whole essay");
     requestAnimationFrame(() => jumpTo($("gradeOut").firstElementChild));
   } catch(e){
     ld.done(true);
@@ -958,7 +960,14 @@ function renderDoc(text, keepTitle){
   const doc = document.createElement("div"); doc.className = "doc"; doc.id = "doc";
   if (title){ const h = document.createElement("h2"); h.contentEditable = true; h.textContent = title; doc.appendChild(h); }
   parts.forEach(p => doc.appendChild(paraEl(p)));
-  out.appendChild(doc); updateCount();
+  out.appendChild(doc);
+  const end = document.createElement("div"); end.className = "endBar";
+  const c1 = document.createElement("button"); c1.className = "primary"; c1.textContent = "📋 Copy whole essay";
+  c1.onclick = () => copyText(docText(), c1, "📋 Copy whole essay");
+  const c2 = document.createElement("button"); c2.textContent = "Copy without title";
+  c2.onclick = () => copyText(bodyText(), c2, "Copy without title");
+  end.append(c1, c2); out.appendChild(end);
+  updateCount();
   requestAnimationFrame(() => jumpTo(out, doc));
   setTimeout(() => runTips("draft"), 900);
 }
@@ -992,8 +1001,8 @@ async function rewrite(p, instruction, btn){
 function toolbar(){
   const bar = document.createElement("div"); bar.className = "bar";
   const bar0 = bar; bar0.classList.add("sticky");
-  const copy = document.createElement("button"); copy.className = "primary"; copy.textContent = "📋 Copy essay";
-  copy.onclick = () => copyText(docText(), copy, "📋 Copy essay");
+  const copy = document.createElement("button"); copy.className = "primary"; copy.textContent = "📋 Copy whole essay";
+  copy.onclick = () => copyText(docText(), copy, "📋 Copy whole essay");
   const txt = document.createElement("button"); txt.textContent = "Download .txt"; txt.onclick = () => download("txt");
   const docx = document.createElement("button"); docx.textContent = "Download for Word"; docx.onclick = () => download("doc");
   const add = document.createElement("button"); add.textContent = "+ Paragraph";
@@ -1022,6 +1031,40 @@ async function copyText(text, btn, label){
   btn.textContent = ok ? "✓ Copied!" : "Select and press Ctrl+C"; btn.classList.toggle("copied", ok);
   setTimeout(() => { btn.textContent = label; btn.classList.remove("copied"); }, 1600);
 }
+
+function bodyText(){
+  const d = $("doc"); if (!d) return "";
+  return [...d.querySelectorAll(".para p")].map(e => e.textContent.trim()).filter(Boolean).join("\n\n");
+}
+
+// Ctrl+A inside the essay selects ALL of it (not just one paragraph), and Ctrl+C copies it all with paragraph breaks
+document.addEventListener("keydown", (e) => {
+  const d = $("doc");
+  if (!d || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "a" || !d.contains(document.activeElement)) return;
+  e.preventDefault();
+  const r = document.createRange(); r.selectNodeContents(d);
+  const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  setStatus("Whole essay selected. Press Ctrl+C to copy it.");
+});
+document.addEventListener("copy", (e) => {
+  const d = $("doc"), sel = getSelection();
+  if (!d || !sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  if (!d.contains(r.commonAncestorContainer) && r.commonAncestorContainer !== d) return;
+  // selection spans more than one paragraph -> copy clean text with blank lines between paragraphs
+  const parts = [...d.querySelectorAll("h2, .para p")].filter(el => sel.containsNode(el, true));
+  if (parts.length < 2) return;
+  const text = parts.map(el => {
+    if (sel.containsNode(el, false)) return el.textContent.trim();
+    const rr = r.cloneRange(); const er = document.createRange(); er.selectNodeContents(el);
+    if (rr.compareBoundaryPoints(Range.START_TO_START, er) < 0) rr.setStart(er.startContainer, er.startOffset);
+    if (rr.compareBoundaryPoints(Range.END_TO_END, er) > 0) rr.setEnd(er.endContainer, er.endOffset);
+    return rr.toString().trim();
+  }).filter(Boolean).join("\n\n");
+  e.clipboardData.setData("text/plain", text);
+  e.preventDefault();
+  setStatus("Copied! ✓");
+});
 
 function docText(){
   const d = $("doc"); if (!d) return "";
